@@ -1,0 +1,43 @@
+---
+globs: *.ts,*.tsx,*.js,*.jsx
+---
+# Comments in English
+
+All code comments must be written in English, regardless of the language used for variable names, function names, or user-facing text.
+
+## Rules
+
+- **Code comments**: All comments in code files must be in English
+- **JSDoc/TSDoc**: Documentation comments must be in English
+- **Inline comments**: Both single-line (`//`) and multi-line (`/* */`) comments must be in English
+- **TODO comments**: TODO and FIXME comments must be in English
+
+## Examples
+
+✅ **Correct:**
+```typescript
+// Calculate the total price including tax
+const total = price * (1 + taxRate);
+
+/**
+ * Fetches user data from the API
+ * @param userId - The unique identifier of the user
+ */
+async function fetchUser(userId: string) {
+  // TODO: Add error handling
+}
+```
+
+❌ **Incorrect:**
+```typescript
+// Berechne den Gesamtpreis inklusive Steuer
+const total = price * (1 + taxRate);
+
+/**
+ * Holt Benutzerdaten von der API
+ * @param userId - Die eindeutige Kennung des Benutzers
+ */
+async function fetchUser(userId: string) {
+  // TODO: Fehlerbehandlung hinzufügen
+}
+```

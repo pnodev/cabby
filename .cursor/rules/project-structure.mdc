@@ -1,0 +1,53 @@
+---
+alwaysApply: true
+---
+# Project Structure Guide
+
+This is a TanStack Start application built with React, TypeScript, and Tailwind CSS.
+
+## Technology Stack
+
+- **Framework**: TanStack Start (React with SSR)
+- **Router**: TanStack Router with file-based routing
+- **Styling**: Tailwind CSS v4
+- **UI Components**: Shadcn UI (New York style)
+- **Icons**: Lucide React
+- **Build Tool**: Vite
+- **Testing**: Vitest
+
+## Project Structure
+
+- **Routes**: File-based routing in src/routes. Each file in this directory becomes a route.
+- **Components**: React components in src/components
+- **UI Components**: Shadcn components should be in src/components/ui
+- **Utilities**: Utility functions in src/lib
+- **Styles**: Global styles in src/styles.css
+
+## Path Aliases
+
+The project uses path aliases configured in package.json:
+- `#/*` maps to `./src/*`
+- Use `#/components` for components
+- Use `#/lib/utils` for utilities
+- Use `#/components/ui` for UI components
+
+## Shadcn Component Installation
+
+Always use the latest version of Shadcn to install new components:
+
+```bash
+pnpm dlx shadcn@latest add <component-name>
+```
+
+## Routing
+
+- Routes are defined as files in src/routes/
+- Use `Link` from `@tanstack/react-router` for navigation
+- The root layout is in src/routes/__root.tsx
+
+## Code Style
+
+- Use TypeScript for all files
+- Follow the ESLint configuration from @tanstack/eslint-config
+- Use Prettier for formatting
+- Run `npm run check` to format and lint
