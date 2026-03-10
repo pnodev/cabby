@@ -240,6 +240,8 @@ Configure GitLab CI variables in that project for:
 - `CABBY_REF`: branch, tag, or commit to deploy (for example `main`).
 - `DEPLOY_HOST`, `DEPLOY_USER`: SSH connection to the target server.
 - `SSH_PRIVATE_KEY`: private key for `DEPLOY_USER`.
+- `NODE_BIN_PATH`: directory where `node`/`npm` live on the server
+  (for example `/usr/local/bin` or an nvm path).
 - `APP_NAME`, `DEPLOY_PATH`, `FILE_STORAGE_PATH`, `FILE_CACHE_PATH`,
   `PORT`, `HOST`, `NODE_ENV`, and any future variables.
 
@@ -289,6 +291,11 @@ deploy_production:
     - |
       ssh "${DEPLOY_USER}@${DEPLOY_HOST}" bash -lc '
         set -e
+
+        # Ensure Node and npm are available in the PATH
+        if [ -n "'"${NODE_BIN_PATH}"'" ]; then
+          export PATH="'"${NODE_BIN_PATH}"':$PATH"
+        fi
 
         mkdir -p "'"${FILE_STORAGE_PATH}"'" "'"${FILE_CACHE_PATH}"'"
 

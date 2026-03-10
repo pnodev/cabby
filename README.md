@@ -1,5 +1,7 @@
 # Cabby - File Storage & Image Optimization Server
 
+![Cabby Logo](./logo.svg)
+
 Cabby is a file storage server with built-in image optimization capabilities. It provides a simple API for storing, retrieving, and transforming files, with special support for image manipulation and caching.
 
 ## License
