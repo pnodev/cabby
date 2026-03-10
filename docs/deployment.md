@@ -310,6 +310,15 @@ deploy_production:
         export HOST="'"${HOST}"'"
         export NODE_ENV="'"${NODE_ENV}"'"
 
+        # PM2 tuning (optional, controlled via CI variables)
+        export PM2_INSTANCES="'"${PM2_INSTANCES}"'"
+        export PM2_MAX_MEMORY_RESTART="'"${PM2_MAX_MEMORY_RESTART}"'"
+        export PM2_MIN_UPTIME="'"${PM2_MIN_UPTIME}"'"
+        export PM2_MAX_RESTARTS="'"${PM2_MAX_RESTARTS}"'"
+        export PM2_RESTART_DELAY="'"${PM2_RESTART_DELAY}"'"
+        export PM2_KILL_TIMEOUT="'"${PM2_KILL_TIMEOUT}"'"
+        export PM2_LISTEN_TIMEOUT="'"${PM2_LISTEN_TIMEOUT}"'"
+
         if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
           pm2 reload "$APP_NAME" --update-env
         else
