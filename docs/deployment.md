@@ -245,46 +245,46 @@ Configure GitLab CI variables in that project for:
 
 ### Example .gitlab-ci.yml (in cabby-deploy)
 
+This variant builds and deploys Cabby in a **single job** without using
+artifacts, which keeps the pipeline simple and avoids artifact size limits.
+
 ```yaml
 image: node:22-alpine
 
 stages:
-  - build
   - deploy
 
-variables:
-  CABBY_DIR: "/builds/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/cabby"
+deploy_production:
+  stage: deploy
+  only:
+    - main
+    - tags
 
-before_script:
-  - apk add --no-cache git openssh-client rsync
+  variables:
+    CABBY_DIR: "/builds/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/cabby"
 
-build_cabby:
-  stage: build
+  before_script:
+    - apk add --no-cache git openssh-client rsync
+
   script:
+    # 1) Clone and build Cabby in CI
     - git clone "$CABBY_REPO" "$CABBY_DIR"
     - cd "$CABBY_DIR"
     - git checkout "$CABBY_REF"
     - npm ci
     - npm run build
-  artifacts:
-    paths:
-      - cabby/
-    expire_in: 1 week
 
-deploy_production:
-  stage: deploy
-  needs: ["build_cabby"]
-  only:
-    - tags
-    - main
-  script:
-    - mkdir -p ~/.ssh
+    # 2) Prepare SSH
     - eval "$(ssh-agent -s)"
     - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
     - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
-    - rsync -az --delete cabby/ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}"
-    - scp ecosystem.cjs "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/ecosystem.cjs"
+    # 3) Rsync the built app to server
+    - rsync -az --delete . "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}"
+
+    # 4) Ensure pm2 config + runtime deps + restart
+    - scp deploy/pm2/ecosystem.example.cjs "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/ecosystem.cjs" || true
 
     - |
       ssh "${DEPLOY_USER}@${DEPLOY_HOST}" bash -lc '
