@@ -105,7 +105,7 @@ npm install
 npm run build
 
 # Start under pm2
-pm2 start ecosystem.cjs
+pm2 start ecosystem.cjs --name "$APP_NAME"
 pm2 save
 ```
 
@@ -311,9 +311,9 @@ deploy_production:
         export NODE_ENV="'"${NODE_ENV}"'"
 
         if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
-          pm2 reload ecosystem.cjs --update-env
+          pm2 reload "$APP_NAME" --update-env
         else
-          pm2 start ecosystem.cjs
+          pm2 start ecosystem.cjs --name "$APP_NAME" --update-env
         fi
 
         pm2 save
