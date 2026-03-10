@@ -276,7 +276,7 @@ deploy_production:
     - git clone "$CABBY_REPO" "$CABBY_DIR"
     - cd "$CABBY_DIR"
     - git checkout "$CABBY_REF"
-    - npm ci
+    - npm ci --include=dev
     - npm run build
 
     # 2) Prepare SSH (non-fatal if host is temporarily unreachable)
