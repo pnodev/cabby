@@ -1,7 +1,13 @@
 import * as React from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '#/components/ui/card'
 import { Button } from '#/components/ui/button'
 import { Upload, File, CheckCircle2, AlertCircle } from 'lucide-react'
 
@@ -15,11 +21,17 @@ export const Route = createFileRoute('/upload')({
           const path = formData.get('path') as string
 
           if (!file) {
-            return json({ success: false, error: 'No file provided' }, { status: 400 })
+            return json(
+              { success: false, error: 'No file provided' },
+              { status: 400 },
+            )
           }
 
           if (!path || path.trim() === '') {
-            return json({ success: false, error: 'No path provided' }, { status: 400 })
+            return json(
+              { success: false, error: 'No path provided' },
+              { status: 400 },
+            )
           }
 
           // Convert File to Buffer
@@ -33,7 +45,10 @@ export const Route = createFileRoute('/upload')({
           if (result.success) {
             return json({ success: true, path: result.path })
           } else {
-            return json({ success: false, error: result.error || 'Upload failed' }, { status: 500 })
+            return json(
+              { success: false, error: result.error || 'Upload failed' },
+              { status: 500 },
+            )
           }
         } catch (error) {
           console.error('Error in upload handler:', error)
@@ -42,7 +57,7 @@ export const Route = createFileRoute('/upload')({
               success: false,
               error: error instanceof Error ? error.message : 'Unknown error',
             },
-            { status: 500 }
+            { status: 500 },
           )
         }
       },
@@ -77,7 +92,10 @@ function UploadPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!file || !path.trim()) {
-      setResult({ success: false, error: 'Please select a file and provide a path' })
+      setResult({
+        success: false,
+        error: 'Please select a file and provide a path',
+      })
       return
     }
 
@@ -106,7 +124,9 @@ function UploadPage() {
         setFile(null)
         setPath('')
         // Reset file input
-        const fileInput = document.getElementById('file-input') as HTMLInputElement
+        const fileInput = document.getElementById(
+          'file-input',
+        ) as HTMLInputElement
         if (fileInput) {
           fileInput.value = ''
         }
@@ -133,14 +153,17 @@ function UploadPage() {
         <div className="mb-6">
           <h1 className="text-3xl font-bold mb-2">Upload File</h1>
           <p className="text-muted-foreground">
-            Upload a file to the storage directory. You can specify a path with subdirectories (e.g., "images/photo.jpg").
+            Upload a file to the storage directory. You can specify a path with
+            subdirectories (e.g., "images/photo.jpg").
           </p>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle>File Upload</CardTitle>
-            <CardDescription>Select a file and specify where it should be stored</CardDescription>
+            <CardDescription>
+              Select a file and specify where it should be stored
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -186,16 +209,18 @@ function UploadPage() {
                   disabled={uploading}
                 />
                 <p className="text-xs text-muted-foreground">
-                  The path where the file will be stored. Subdirectories will be created automatically.
+                  The path where the file will be stored. Subdirectories will be
+                  created automatically.
                 </p>
               </div>
 
               {result && (
                 <div
-                  className={`p-4 rounded-md border ${result.success
-                    ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
-                    : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
-                    }`}
+                  className={`p-4 rounded-md border ${
+                    result.success
+                      ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
+                      : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+                  }`}
                 >
                   <div className="flex items-center gap-2">
                     {result.success ? (
@@ -205,15 +230,21 @@ function UploadPage() {
                           <p className="text-sm font-medium text-green-900 dark:text-green-100">
                             File uploaded successfully!
                           </p>
-                          <p className="text-xs text-green-700 dark:text-green-300">Path: {result.path}</p>
+                          <p className="text-xs text-green-700 dark:text-green-300">
+                            Path: {result.path}
+                          </p>
                         </div>
                       </>
                     ) : (
                       <>
                         <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
                         <div>
-                          <p className="text-sm font-medium text-red-900 dark:text-red-100">Upload failed</p>
-                          <p className="text-xs text-red-700 dark:text-red-300">{result.error}</p>
+                          <p className="text-sm font-medium text-red-900 dark:text-red-100">
+                            Upload failed
+                          </p>
+                          <p className="text-xs text-red-700 dark:text-red-300">
+                            {result.error}
+                          </p>
                         </div>
                       </>
                     )}
@@ -222,7 +253,10 @@ function UploadPage() {
               )}
 
               <div className="flex gap-3">
-                <Button type="submit" disabled={uploading || !file || !path.trim()}>
+                <Button
+                  type="submit"
+                  disabled={uploading || !file || !path.trim()}
+                >
                   {uploading ? 'Uploading...' : 'Upload File'}
                 </Button>
                 <Button
@@ -232,7 +266,9 @@ function UploadPage() {
                     setFile(null)
                     setPath('')
                     setResult(null)
-                    const fileInput = document.getElementById('file-input') as HTMLInputElement
+                    const fileInput = document.getElementById(
+                      'file-input',
+                    ) as HTMLInputElement
                     if (fileInput) {
                       fileInput.value = ''
                     }

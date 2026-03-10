@@ -61,6 +61,7 @@ GET /files/{pathToFile}
 ```
 
 **Example:**
+
 ```
 GET /files/images/test.jpg
 ```
@@ -74,12 +75,14 @@ GET /files/{pathToFile}?size={width}x{height}&format={format}
 ```
 
 **Parameters:**
+
 - `size` (optional) - Resize the image to the specified dimensions (e.g., `180x240`)
 - `format` (optional) - Convert the image to a different format. Supported output formats: `webp`, `avif`, `png`, `jpg`, `jpeg`
 
 **Note:** The server can read images in formats: `jpg`, `jpeg`, `png`, `gif`, `webp`, `avif`, `tiff`, `bmp`, `svg`. However, conversion is only supported to: `webp`, `avif`, `png`, `jpg`, `jpeg`.
 
 **Examples:**
+
 ```
 # Resize to 180x240 pixels
 GET /files/images/test.jpg?size=180x240
@@ -103,10 +106,12 @@ Content-Type: multipart/form-data
 ```
 
 **Form Data:**
+
 - `file` - The file to upload (File object)
 - `path` - The path where the file should be stored (relative to `FILE_STORAGE_PATH`)
 
 **Example using curl:**
+
 ```bash
 curl -X POST http://localhost:3000/upload \
   -F "file=@/path/to/local/file.jpg" \
@@ -114,6 +119,7 @@ curl -X POST http://localhost:3000/upload \
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -169,7 +175,6 @@ If you prefer not to use Tailwind CSS:
 
 ## Linting & Formatting
 
-
 This project uses [eslint](https://eslint.org/) and [prettier](https://prettier.io/) for linting and formatting. Eslint is configured using [tanstack/eslint-config](https://tanstack.com/config/latest/docs/eslint). The following scripts are available:
 
 ```bash
@@ -178,7 +183,6 @@ npm run format
 npm run check
 ```
 
-
 ## Shadcn
 
 Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
@@ -186,8 +190,6 @@ Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
 ```bash
 pnpm dlx shadcn@latest add button
 ```
-
-
 
 ## Routing
 
@@ -206,7 +208,7 @@ Now that you have two routes you can use a `Link` component to navigate between 
 To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
 
 ```tsx
-import { Link } from "@tanstack/react-router";
+import { Link } from '@tanstack/react-router'
 ```
 
 Then anywhere in your JSX you can use it like so:
@@ -274,11 +276,11 @@ const getServerTime = createServerFn({
 // Use in a component
 function MyComponent() {
   const [time, setTime] = useState('')
-  
+
   useEffect(() => {
     getServerTime().then(setTime)
   }, [])
-  
+
   return <div>Server time: {time}</div>
 }
 ```

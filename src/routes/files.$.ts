@@ -28,30 +28,38 @@ export const Route = createFileRoute('/files/$')({
           // Check if FILE_STORAGE_PATH is set
           const storagePath = process.env.FILE_STORAGE_PATH
           if (!storagePath) {
-            return new Response('FILE_STORAGE_PATH environment variable is not set', {
-              status: 500,
-              headers: { 'Content-Type': 'text/plain' },
-            })
+            return new Response(
+              'FILE_STORAGE_PATH environment variable is not set',
+              {
+                status: 500,
+                headers: { 'Content-Type': 'text/plain' },
+              },
+            )
           }
 
           const isImage = await isImageFile({ data: { filePath: path } })
 
           // Check if transformation parameters are only used for images
           if ((sizeParam || formatParam) && !isImage) {
-            return new Response('Size and format parameters are only available for image files', {
-              status: 400,
-              headers: { 'Content-Type': 'text/plain' },
-            })
+            return new Response(
+              'Size and format parameters are only available for image files',
+              {
+                status: 400,
+                headers: { 'Content-Type': 'text/plain' },
+              },
+            )
           }
 
           // Get the file (with optional transformations)
-          const { buffer, contentType } = await getFile({ data: { filePath: path, sizeParam, formatParam } })
+          const { buffer, contentType } = await getFile({
+            data: { filePath: path, sizeParam, formatParam },
+          })
 
           // Set long-running cache headers (1 year)
           const headers = new Headers({
             'Content-Type': contentType,
             'Cache-Control': 'public, max-age=31536000, immutable',
-            'ETag': `"${Buffer.from(path).toString('base64')}"`,
+            ETag: `"${Buffer.from(path).toString('base64')}"`,
           })
 
           return new Response(new Uint8Array(buffer), {

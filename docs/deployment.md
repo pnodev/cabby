@@ -163,7 +163,7 @@ services:
       - cabby_files:/var/lib/cabby/files
       - cabby_cache:/var/lib/cabby/cache
     ports:
-      - "3000:3000"
+      - '3000:3000'
 ```
 
 You can adapt this to Kubernetes, Nomad, or any other orchestrator by
@@ -263,7 +263,7 @@ deploy_production:
     - tags
 
   variables:
-    CABBY_DIR: "/builds/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/cabby"
+    CABBY_DIR: '/builds/${CI_PROJECT_NAMESPACE}/${CI_PROJECT_NAME}/cabby'
 
   before_script:
     - apk add --no-cache git openssh-client rsync
@@ -347,4 +347,3 @@ flowchart LR
 This layout works for both bare-metal and containerized deployments. In
 containerized environments, `fileStorage` and `fileCache` are typically
 backed by volumes.
-

@@ -1,4 +1,4 @@
-version: "3.9"
+version: '3.9'
 
 services:
   cabby:
@@ -27,9 +27,8 @@ services:
       - cabby_cache:/var/lib/cabby/cache
 
     ports:
-      - "3000:3000"
+      - '3000:3000'
 
 volumes:
   cabby_files:
   cabby_cache:
-

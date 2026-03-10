@@ -1,6 +1,13 @@
 import * as React from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardAction } from '#/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardAction,
+} from '#/components/ui/card'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { ExternalLink, Grid3x3, List, Upload } from 'lucide-react'
@@ -70,99 +77,114 @@ function App() {
       ) : viewMode === 'card' ? (
         // Card view
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {images.map((file: { path: string; isImage: boolean; hasCache: boolean; cacheCount: number }) => (
-            <Card key={file.path}>
-              <CardHeader>
-                <CardAction>
-                  <a
-                    href={`/files/${file.path}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-foreground transition-colors"
-                    aria-label="Open file in new tab"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
-                </CardAction>
-                <CardTitle className="text-sm font-medium truncate">
-                  {file.path}
-                </CardTitle>
-                <CardDescription>
-                  <div className="flex items-center gap-2 mt-2">
-                    {file.isImage ? (
-                      file.hasCache ? (
-                        <Badge variant="secondary">
-                          {file.cacheCount} cached version{file.cacheCount !== 1 ? 's' : ''}
-                        </Badge>
+          {images.map(
+            (file: {
+              path: string
+              isImage: boolean
+              hasCache: boolean
+              cacheCount: number
+            }) => (
+              <Card key={file.path}>
+                <CardHeader>
+                  <CardAction>
+                    <a
+                      href={`/files/${file.path}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label="Open file in new tab"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </CardAction>
+                  <CardTitle className="text-sm font-medium truncate">
+                    {file.path}
+                  </CardTitle>
+                  <CardDescription>
+                    <div className="flex items-center gap-2 mt-2">
+                      {file.isImage ? (
+                        file.hasCache ? (
+                          <Badge variant="secondary">
+                            {file.cacheCount} cached version
+                            {file.cacheCount !== 1 ? 's' : ''}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline">Image - No cache</Badge>
+                        )
                       ) : (
-                        <Badge variant="outline">Image - No cache</Badge>
-                      )
-                    ) : (
-                      <Badge variant="outline">File</Badge>
-                    )}
-                  </div>
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Link
-                  to="/file/$"
-                  params={{ _splat: file.path }}
-                  className="text-sm text-primary hover:underline block"
-                >
-                  View details →
-                </Link>
-              </CardContent>
-            </Card>
-          ))}
+                        <Badge variant="outline">File</Badge>
+                      )}
+                    </div>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Link
+                    to="/file/$"
+                    params={{ _splat: file.path }}
+                    className="text-sm text-primary hover:underline block"
+                  >
+                    View details →
+                  </Link>
+                </CardContent>
+              </Card>
+            ),
+          )}
         </div>
       ) : (
         // List view
         <div className="space-y-2">
-          {images.map((file: { path: string; isImage: boolean; hasCache: boolean; cacheCount: number }) => (
-            <Card key={file.path}>
-              <CardContent className="py-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3">
-                      <Link
-                        to="/file/$"
-                        params={{ _splat: file.path }}
-                        className="text-sm font-medium truncate hover:text-primary"
-                      >
-                        {file.path}
-                      </Link>
-                      <div className="flex items-center gap-2">
-                        {file.isImage ? (
-                          file.hasCache ? (
-                            <Badge variant="secondary" className="text-xs">
-                              {file.cacheCount} cached
-                            </Badge>
+          {images.map(
+            (file: {
+              path: string
+              isImage: boolean
+              hasCache: boolean
+              cacheCount: number
+            }) => (
+              <Card key={file.path}>
+                <CardContent className="py-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3">
+                        <Link
+                          to="/file/$"
+                          params={{ _splat: file.path }}
+                          className="text-sm font-medium truncate hover:text-primary"
+                        >
+                          {file.path}
+                        </Link>
+                        <div className="flex items-center gap-2">
+                          {file.isImage ? (
+                            file.hasCache ? (
+                              <Badge variant="secondary" className="text-xs">
+                                {file.cacheCount} cached
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                Image
+                              </Badge>
+                            )
                           ) : (
                             <Badge variant="outline" className="text-xs">
-                              Image
+                              File
                             </Badge>
-                          )
-                        ) : (
-                          <Badge variant="outline" className="text-xs">
-                            File
-                          </Badge>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
+                    <a
+                      href={`/files/${file.path}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                      aria-label="Open file in new tab"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
                   </div>
-                  <a
-                    href={`/files/${file.path}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                    aria-label="Open file in new tab"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            ),
+          )}
         </div>
       )}
     </div>

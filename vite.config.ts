@@ -13,8 +13,8 @@ const config = defineConfig({
     devtools(),
     nitro({
       rollupConfig: {
-        external: [/^@sentry\//, /^sharp$/, /^node:/, /^fs$/, /^path$/]
-      }
+        external: [/^@sentry\//, /^sharp$/, /^node:/, /^fs$/, /^path$/],
+      },
     }),
     tsconfigPaths({ projects: ['./tsconfig.json'] }),
     tailwindcss(),
