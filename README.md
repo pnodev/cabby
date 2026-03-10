@@ -29,6 +29,20 @@ FILE_STORAGE_PATH=/Users/username/Documents/filestorage
 FILE_CACHE_PATH=/Users/username/Documents/filestorage/.cache
 ```
 
+## Deployment
+
+Cabby is deployment-target agnostic and can be run:
+
+- Directly with Node.js in production using `npm run build` and `npm start`
+- Under a process manager such as pm2
+- In containers using the provided `Dockerfile` and `deploy/docker-compose.example.yml`
+
+For detailed instructions, including environment variables, pm2 usage,
+Docker examples, reverse-proxy configuration, and a sample GitLab CI + pm2
+setup, see:
+
+- `docs/deployment.md`
+
 ## API Usage
 
 ### Get a File

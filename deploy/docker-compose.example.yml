@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  cabby:
+    image: cabby:latest
+    # Or build locally:
+    # build:
+    #   context: ..
+    #   dockerfile: ./Dockerfile
+    container_name: cabby
+    restart: unless-stopped
+    environment:
+      # Network configuration
+      PORT: 3000
+      HOST: 0.0.0.0
+
+      # Storage configuration
+      FILE_STORAGE_PATH: /var/lib/cabby/files
+      FILE_CACHE_PATH: /var/lib/cabby/cache
+
+      # Reserved for future use
+      # DB_URL: postgres://user:pass@db:5432/cabby
+      # REDIS_URL: redis://redis:6379
+
+    volumes:
+      - cabby_files:/var/lib/cabby/files
+      - cabby_cache:/var/lib/cabby/cache
+
+    ports:
+      - "3000:3000"
+
+volumes:
+  cabby_files:
+  cabby_cache:
+
