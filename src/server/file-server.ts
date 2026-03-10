@@ -18,7 +18,7 @@ async function getPath() {
 async function getSharp() {
   const sharp = await import('sharp')
   // Sharp is a CommonJS module, so it might have a default export
-  return sharp.default || sharp
+  return sharp.default
 }
 
 // Get storage directory from environment variable
@@ -113,7 +113,9 @@ export async function getCacheDirForFile(filePath: string): Promise<string> {
   const fs = await getFs()
   const cacheDir = await getCachePath()
   const fileName = path.basename(filePath) // Includes extension
-  const fileCacheDir = path.join(cacheDir, fileName)
+  const decodedFileName = decodeURIComponent(fileName)
+
+  const fileCacheDir = path.join(cacheDir, decodedFileName)
 
   // Ensure cache directory exists
   if (!fs.existsSync(fileCacheDir)) {
@@ -221,13 +223,13 @@ export const getFile = createServerFn().inputValidator(GetFileInputSchema).handl
     throw new Error('File not found')
   }
 
-  const isImage = await checkIsImageFile(filePath)
+  const isImage = await checkIsImageFile(decodedPath)
   // If it's an image and we have transformation parameters, process it
   if (isImage && (sizeParam || formatParam)) {
     const size = parseSize(sizeParam)
-    const format = await getOutputFormat(formatParam, filePath)
-    const cacheKey = await generateCacheKey(filePath, size, format)
-    const cacheFilePath = await getCacheFilePath(filePath, cacheKey)
+    const format = await getOutputFormat(formatParam, decodedPath)
+    const cacheKey = await generateCacheKey(decodedPath, size, format)
+    const cacheFilePath = await getCacheFilePath(decodedPath, cacheKey)
 
     // Check if cached version exists
     if (fs.existsSync(cacheFilePath)) {
@@ -235,6 +237,7 @@ export const getFile = createServerFn().inputValidator(GetFileInputSchema).handl
       const contentType = getContentType(format)
       return { buffer, contentType, cacheKey }
     }
+
 
     // Generate transformed version
     await transformImage({ data: { inputPath: fullPath, outputPath: cacheFilePath, size, format } })
@@ -275,13 +278,6 @@ export const getAllFiles = createServerFn().handler(async (): Promise<Array<{ pa
   const storagePath = getStoragePath()
   const cacheDir = await getCachePath()
   const files: Array<{ path: string; isImage: boolean; hasCache: boolean; cacheCount: number }> = []
-
-  // Helper function to check if file is an image (not using Server Function for performance)
-  async function checkIsImageFile(filePath: string): Promise<boolean> {
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.tiff', '.bmp', '.svg']
-    const ext = path.extname(filePath).toLowerCase()
-    return imageExtensions.includes(ext)
-  }
 
   async function walkDirectory(dir: string, basePath: string = ''): Promise<void> {
     try {

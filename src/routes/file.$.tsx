@@ -1,7 +1,6 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '#/components/ui/card'
 import { Badge } from '#/components/ui/badge'
-import { Link } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/file/$')({
   loader: async ({ params }) => {
