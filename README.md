@@ -2,6 +2,11 @@
 
 Cabby is a file storage server with built-in image optimization capabilities. It provides a simple API for storing, retrieving, and transforming files, with special support for image manipulation and caching.
 
+## License
+
+Cabby is open source software licensed under the MIT License.
+See the `LICENSE` file for details.
+
 ## Environment Variables
 
 Before running the application, you need to set the following environment variables:
