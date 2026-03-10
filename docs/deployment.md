@@ -265,6 +265,9 @@ deploy_production:
 
   before_script:
     - apk add --no-cache git openssh-client rsync
+    - mkdir -p ~/.ssh
+    - echo "$DEPLOY_SSH_KEY" | base64 -d > ~/.ssh/id_rsa
+    - chmod 700 ~/.ssh && chmod 600 ~/.ssh/id_rsa
 
   script:
     # 1) Clone and build Cabby in CI
@@ -275,9 +278,6 @@ deploy_production:
     - npm run build
 
     # 2) Prepare SSH
-    - eval "$(ssh-agent -s)"
-    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
-    - mkdir -p ~/.ssh
     - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
     # 3) Rsync the built app to server
