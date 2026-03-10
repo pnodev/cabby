@@ -90,11 +90,11 @@ mkdir -p /var/lib/cabby/files /var/lib/cabby/cache
 
 ### Using the example ecosystem file
 
-Copy the example file to your server and adjust paths and instance counts as
-needed:
+Copy the example file to your server as a pm2 ecosystem config and adjust
+paths and instance counts as needed:
 
 ```bash
-scp deploy/pm2/ecosystem.example.cjs deploy@yourserver:/var/www/cabby/ecosystem.cjs
+scp deploy/pm2/ecosystem.example.cjs deploy@yourserver:/var/www/cabby/ecosystem.config.cjs
 ```
 
 On the server, from `/var/www/cabby`:
@@ -104,15 +104,15 @@ On the server, from `/var/www/cabby`:
 npm install
 npm run build
 
-# Start under pm2
-pm2 start ecosystem.cjs --name "$APP_NAME"
+# Start under pm2 (reads ecosystem.config.cjs)
+pm2 start ecosystem.config.cjs --name "$APP_NAME"
 pm2 save
 ```
 
 To restart after deploying new code:
 
 ```bash
-pm2 reload ecosystem.cjs --update-env
+pm2 reload "$APP_NAME" --update-env
 ```
 
 ## Docker
@@ -230,7 +230,7 @@ a separate GitLab project that handles deployment. That project:
 ### Suggested GitLab project layout
 
 - `cabby-deploy` (GitLab project)
-  - `ecosystem.cjs` (pm2 config for your environment)
+  - `ecosystem.config.cjs` (pm2 config for your environment)
   - `.gitlab-ci.yml` (pipeline that builds and deploys Cabby)
   - Optional shell scripts (`deploy.sh`) to keep the CI job clean.
 
@@ -286,7 +286,7 @@ deploy_production:
     - rsync -az --delete . "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}"
 
     # 4) Ensure pm2 config + runtime deps + restart
-    - scp deploy/pm2/ecosystem.example.cjs "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/ecosystem.cjs" || true
+    - scp deploy/pm2/ecosystem.example.cjs "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/ecosystem.config.cjs" || true
 
     - |
       ssh "${DEPLOY_USER}@${DEPLOY_HOST}" bash -lc '
@@ -322,7 +322,7 @@ deploy_production:
         if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
           pm2 reload "$APP_NAME" --update-env
         else
-          pm2 start ecosystem.cjs --name "$APP_NAME" --update-env
+          pm2 start ecosystem.config.cjs --name "$APP_NAME" --update-env
         fi
 
         pm2 save
