@@ -277,8 +277,8 @@ deploy_production:
     - npm ci
     - npm run build
 
-    # 2) Prepare SSH
-    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+    # 2) Prepare SSH (non-fatal if host is temporarily unreachable)
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts || true
 
     # 3) Rsync the built app to server
     - rsync -az --delete . "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}"
