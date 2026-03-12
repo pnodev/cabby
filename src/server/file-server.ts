@@ -40,6 +40,89 @@ function validateSecret(providedSecret: string | undefined): boolean {
   return providedSecret === expectedSecret
 }
 
+// Check if request origin matches ALLOWED_ORIGIN from environment variable
+function isOriginAllowed(request?: Request): boolean {
+  if (!request) return false
+
+  const allowedOrigin = process.env.ALLOWED_ORIGIN
+  if (!allowedOrigin) {
+    // If no ALLOWED_ORIGIN is configured, deny access (security by default)
+    return false
+  }
+
+  // Parse allowed origin (supports both "localhost:3000" and "http://localhost:3000")
+  let allowedHostname: string
+  let allowedPort: string | null = null
+  let allowedProtocol: string | null = null
+  try {
+    // Try parsing as URL first
+    if (allowedOrigin.includes('://')) {
+      const allowedUrl = new URL(allowedOrigin)
+      allowedHostname = allowedUrl.hostname
+      allowedPort = allowedUrl.port || null
+      allowedProtocol = allowedUrl.protocol
+    } else {
+      // Parse as hostname:port
+      const parts = allowedOrigin.split(':')
+      allowedHostname = parts[0]
+      allowedPort = parts[1] || null
+      allowedProtocol = null // No protocol specified
+    }
+  } catch {
+    // Invalid ALLOWED_ORIGIN format
+    return false
+  }
+
+  const origin = request.headers.get('origin')
+  const referer = request.headers.get('referer')
+
+  // Check origin header
+  if (origin) {
+    try {
+      const originUrl = new URL(origin)
+      const originPort = originUrl.port || null
+
+      // Compare hostname and port
+      if (originUrl.hostname === allowedHostname) {
+        // If protocol was specified in ALLOWED_ORIGIN, also check protocol
+        if (allowedProtocol && originUrl.protocol !== allowedProtocol) {
+          return false
+        }
+        // Compare ports directly
+        if (originPort === allowedPort) {
+          return true
+        }
+      }
+    } catch {
+      // Invalid origin URL
+    }
+  }
+
+  // Check referer header as fallback (referer contains full URL, extract origin)
+  if (referer) {
+    try {
+      const refererUrl = new URL(referer)
+      const refererPort = refererUrl.port || null
+
+      // Compare hostname and port
+      if (refererUrl.hostname === allowedHostname) {
+        // If protocol was specified in ALLOWED_ORIGIN, also check protocol
+        if (allowedProtocol && refererUrl.protocol !== allowedProtocol) {
+          return false
+        }
+        // Compare ports directly
+        if (refererPort === allowedPort) {
+          return true
+        }
+      }
+    } catch {
+      // Invalid referer URL
+    }
+  }
+
+  return false
+}
+
 // Get cache directory (relative to storage or absolute)
 // Ensures the cache directory exists
 export async function getCachePath(): Promise<string> {
@@ -413,6 +496,31 @@ export const getAllFiles = createServerFn()
     },
   )
 
+// Server Function for getting all files with secret (always runs server-side)
+export const getAllFilesWithSecret = createServerFn().handler(
+  async (ctx): Promise<{
+    files: Array<{
+      path: string
+      isImage: boolean
+      hasCache: boolean
+      cacheCount: number
+    }>
+    secret: string | undefined
+  }> => {
+    // @ts-expect-error - request may not be in type definition but is available at runtime
+    const request = ctx.request as Request | undefined
+
+    const originAllowed = isOriginAllowed(request)
+    if (!originAllowed) {
+      throw new Error('Unauthorized')
+    }
+
+    const secret = originAllowed ? process.env.AUTH_SECRET : undefined
+    const files = await getAllFiles({ data: { secret } })
+    return { files, secret }
+  },
+)
+
 // Count cache files for a given image path
 async function countCacheFiles(
   imagePath: string,
@@ -532,7 +640,7 @@ const GetFileDetailsInputSchema = z.object({
 export const getFileDetails = createServerFn()
   .inputValidator(GetFileDetailsInputSchema)
   .handler(
-    async ({ data }): Promise<{
+    async (ctx): Promise<{
       path: string
       isImage: boolean
       versions: Array<{
@@ -544,6 +652,9 @@ export const getFileDetails = createServerFn()
       isPublic: boolean
       secret: string | undefined
     }> => {
+      // @ts-expect-error - request may not be in type definition but is available at runtime
+      const request = ctx.request as Request | undefined
+      const { data } = ctx
       const { getCachedVersions, isImageFile } = await import('#/server/file-server')
       const { isFilePublic } = await import('#/server/file-state')
 
@@ -553,12 +664,11 @@ export const getFileDetails = createServerFn()
         ? await getCachedVersions({ data: { imagePath: path } })
         : []
       const isPublic = await isFilePublic(path)
-      const secret = process.env.AUTH_SECRET
+      const secret = isOriginAllowed(request) ? process.env.AUTH_SECRET : undefined
 
       return { path, isImage, versions, isPublic, secret }
     },
   )
-
 
 // Upload a file to the storage directory
 export async function uploadFile(

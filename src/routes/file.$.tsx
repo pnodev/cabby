@@ -34,27 +34,27 @@ export const Route = createFileRoute('/file/$')({
   component: FileDetail,
 })
 
+// Helper to build file URL with secret
+export const getFileUrl = (filePath: string, params?: { size?: string; format?: string }, secret?: string) => {
+  const searchParams = new URLSearchParams()
+  if (secret) {
+    searchParams.set('secret', secret)
+  }
+  if (params?.size) {
+    searchParams.set('size', params.size)
+  }
+  if (params?.format) {
+    searchParams.set('format', params.format)
+  }
+  const queryString = searchParams.toString()
+  return `/files/${filePath}${queryString ? `?${queryString}` : ''}`
+}
+
 function FileDetail() {
   const { path, isImage, versions, isPublic, secret } = Route.useLoaderData()
   const router = useRouter()
 
   const [isPublicState, setIsPublicState] = useState(isPublic)
-
-  // Helper to build file URL with secret
-  const getFileUrl = (filePath: string, params?: { size?: string; format?: string }) => {
-    const searchParams = new URLSearchParams()
-    if (secret) {
-      searchParams.set('secret', secret)
-    }
-    if (params?.size) {
-      searchParams.set('size', params.size)
-    }
-    if (params?.format) {
-      searchParams.set('format', params.format)
-    }
-    const queryString = searchParams.toString()
-    return `/files/${filePath}${queryString ? `?${queryString}` : ''}`
-  }
 
   const handleVisibleChange = async (checked: boolean) => {
     try {
@@ -104,7 +104,7 @@ function FileDetail() {
             <div className="space-y-4">
               {isImage ? (
                 <img
-                  src={getFileUrl(path)}
+                  src={getFileUrl(path, undefined, secret)}
                   alt={path}
                   className="max-w-full h-auto rounded-lg border"
                 />
@@ -117,7 +117,7 @@ function FileDetail() {
               )}
               <div>
                 <a
-                  href={getFileUrl(path)}
+                  href={getFileUrl(path, undefined, secret)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm text-primary hover:underline"
@@ -181,7 +181,7 @@ function FileDetail() {
                           </CardHeader>
                           <CardContent className="space-y-3">
                             <img
-                              src={getFileUrl(path, { size, format })}
+                              src={getFileUrl(path, { size, format }, secret)}
                               alt={`${path} - ${version.size || 'original'} - ${version.format}`}
                               className="w-full h-auto rounded border"
                             />

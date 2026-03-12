@@ -11,24 +11,24 @@ import {
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { ExternalLink, Grid3x3, List, Upload } from 'lucide-react'
-import { getAllFiles } from '#/server/file-server'
+import { getAllFilesWithSecret } from '#/server/file-server'
+import { getFileUrl } from './file.$'
 
 export const Route = createFileRoute('/')({
   loader: async () => {
     try {
-      // Pass AUTH_SECRET from env to allow accessing private files in frontend
-      const secret = process.env.AUTH_SECRET
-      return await getAllFiles({ data: { secret } })
+      // Call server function - always runs server-side
+      return await getAllFilesWithSecret()
     } catch (error) {
       console.error('Error loading files:', error)
-      return []
+      return { files: [], secret: undefined }
     }
   },
   component: App,
 })
 
 function App() {
-  const images = Route.useLoaderData()
+  const { files, secret } = Route.useLoaderData()
   const [viewMode, setViewMode] = React.useState<'card' | 'list'>('card')
 
   return (
@@ -38,7 +38,7 @@ function App() {
           <div>
             <h1 className="text-3xl font-bold mb-2">File Storage</h1>
             <p className="text-muted-foreground">
-              {images.length} file{images.length !== 1 ? 's' : ''} found
+              {files.length} file{files.length !== 1 ? 's' : ''} found
             </p>
           </div>
           <div className="flex gap-2">
@@ -70,7 +70,7 @@ function App() {
         </div>
       </section>
 
-      {images.length === 0 ? (
+      {files.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             No files found in storage directory
@@ -79,7 +79,7 @@ function App() {
       ) : viewMode === 'card' ? (
         // Card view
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {images.map(
+          {files.map(
             (file: {
               path: string
               isImage: boolean
@@ -90,7 +90,7 @@ function App() {
                 <CardHeader>
                   <CardAction>
                     <a
-                      href={`/files/${file.path}`}
+                      href={getFileUrl(file.path, undefined, secret)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-muted-foreground hover:text-foreground transition-colors"
@@ -135,7 +135,7 @@ function App() {
       ) : (
         // List view
         <div className="space-y-2">
-          {images.map(
+          {files.map(
             (file: {
               path: string
               isImage: boolean
