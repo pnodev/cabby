@@ -19,6 +19,7 @@ export const Route = createFileRoute('/upload')({
           const formData = await request.formData()
           const file = formData.get('file') as File
           const path = formData.get('path') as string
+          const isPublic = formData.get('isPublic') === 'true'
 
           if (!file) {
             return json(
@@ -40,9 +41,12 @@ export const Route = createFileRoute('/upload')({
 
           // Dynamic import to ensure this only runs server-side
           const { uploadFile } = await import('#/server/file-server')
+          const { setFileVisibility } = await import('#/server/file-state')
           const result = await uploadFile(path, buffer)
 
           if (result.success) {
+            // Set file visibility based on upload parameter
+            setFileVisibility(result.path, isPublic)
             return json({ success: true, path: result.path })
           } else {
             return json(
@@ -70,6 +74,7 @@ function UploadPage() {
   const router = useRouter()
   const [file, setFile] = React.useState<File | null>(null)
   const [path, setPath] = React.useState<string>('')
+  const [isPublic, setIsPublic] = React.useState<boolean>(true)
   const [uploading, setUploading] = React.useState(false)
   const [result, setResult] = React.useState<{
     success: boolean
@@ -216,11 +221,10 @@ function UploadPage() {
 
               {result && (
                 <div
-                  className={`p-4 rounded-md border ${
-                    result.success
+                  className={`p-4 rounded-md border ${result.success
                       ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
                       : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-2">
                     {result.success ? (

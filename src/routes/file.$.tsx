@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import {
   Card,
   CardContent,
@@ -7,34 +7,67 @@ import {
   CardTitle,
 } from '#/components/ui/card'
 import { Badge } from '#/components/ui/badge'
+import { Switch } from "#/components/ui/switch"
+import { Field, FieldContent, FieldLabel } from '#/components/ui/field'
+import { setFileVisibilityServerFn } from '#/server/file-state'
+import { getFileDetails } from '#/server/file-server'
+import { useState } from 'react'
 
 export const Route = createFileRoute('/file/$')({
   loader: async ({ params }) => {
     try {
-      // Dynamic import to ensure this only runs server-side
-      const { getCachedVersions, isImageFile } =
-        await import('#/server/file-server')
-
-      // Get the file path from the route parameter
-      // Decode the path in case it contains URL-encoded characters
       const path = decodeURIComponent(params._splat || '')
-      const isImage = await isImageFile({ data: { filePath: path } })
-      // Only get cached versions for images
-      const versions = isImage
-        ? await getCachedVersions({ data: { imagePath: path } })
-        : []
-      return { path, isImage, versions }
+      // Call server function - always runs server-side
+      return await getFileDetails({ data: { filePath: path } })
     } catch (error) {
       console.error('Error loading file details:', error)
       const path = decodeURIComponent(params._splat || '')
-      return { path, isImage: false, versions: [] }
+      return {
+        path,
+        isImage: false,
+        versions: [],
+        isPublic: true,
+        secret: undefined
+      }
     }
   },
   component: FileDetail,
 })
 
 function FileDetail() {
-  const { path, isImage, versions } = Route.useLoaderData()
+  const { path, isImage, versions, isPublic, secret } = Route.useLoaderData()
+  const router = useRouter()
+
+  const [isPublicState, setIsPublicState] = useState(isPublic)
+
+  // Helper to build file URL with secret
+  const getFileUrl = (filePath: string, params?: { size?: string; format?: string }) => {
+    const searchParams = new URLSearchParams()
+    if (secret) {
+      searchParams.set('secret', secret)
+    }
+    if (params?.size) {
+      searchParams.set('size', params.size)
+    }
+    if (params?.format) {
+      searchParams.set('format', params.format)
+    }
+    const queryString = searchParams.toString()
+    return `/files/${filePath}${queryString ? `?${queryString}` : ''}`
+  }
+
+  const handleVisibleChange = async (checked: boolean) => {
+    try {
+      await setFileVisibilityServerFn({
+        data: { filePath: path, isPublic: checked },
+      })
+      setIsPublicState(checked)
+      // Invalidate the route to reload data
+      await router.invalidate()
+    } catch (error) {
+      console.error('Error updating file visibility:', error)
+    }
+  }
 
   return (
     <div className="page-wrap px-4 pb-8 pt-14">
@@ -60,10 +93,18 @@ function FileDetail() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <Field orientation="horizontal" className="mb-4 w-fit">
+              <FieldContent>
+                <FieldLabel htmlFor="switch-visible">
+                  Visible?
+                </FieldLabel>
+              </FieldContent>
+              <Switch checked={isPublicState} onCheckedChange={handleVisibleChange} id="switch-visible" />
+            </Field>
             <div className="space-y-4">
               {isImage ? (
                 <img
-                  src={`/files/${path}`}
+                  src={getFileUrl(path)}
                   alt={path}
                   className="max-w-full h-auto rounded-lg border"
                 />
@@ -76,7 +117,7 @@ function FileDetail() {
               )}
               <div>
                 <a
-                  href={`/files/${path}`}
+                  href={getFileUrl(path)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm text-primary hover:underline"
@@ -113,42 +154,49 @@ function FileDetail() {
                       size?: string
                       format: string
                       url: string
-                    }) => (
-                      <Card key={version.fileName}>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">
-                            {version.fileName}
-                          </CardTitle>
-                          <CardDescription>
-                            <div className="flex items-center gap-2 mt-2">
-                              {version.size && (
-                                <Badge variant="outline" className="text-xs">
-                                  {version.size}
+                    }) => {
+                      // Parse the existing URL to extract size/format
+                      const existingUrl = new URL(version.url, window.location.origin)
+                      const size = existingUrl.searchParams.get('size') || undefined
+                      const format = existingUrl.searchParams.get('format') || undefined
+
+                      return (
+                        <Card key={version.fileName}>
+                          <CardHeader>
+                            <CardTitle className="text-sm font-medium">
+                              {version.fileName}
+                            </CardTitle>
+                            <CardDescription>
+                              <div className="flex items-center gap-2 mt-2">
+                                {version.size && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {version.size}
+                                  </Badge>
+                                )}
+                                <Badge variant="secondary" className="text-xs">
+                                  {version.format}
                                 </Badge>
-                              )}
-                              <Badge variant="secondary" className="text-xs">
-                                {version.format}
-                              </Badge>
-                            </div>
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          <img
-                            src={version.url}
-                            alt={`${path} - ${version.size || 'original'} - ${version.format}`}
-                            className="w-full h-auto rounded border"
-                          />
-                          <a
-                            href={version.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-primary hover:underline block"
-                          >
-                            Open in new tab →
-                          </a>
-                        </CardContent>
-                      </Card>
-                    ),
+                              </div>
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <img
+                              src={getFileUrl(path, { size, format })}
+                              alt={`${path} - ${version.size || 'original'} - ${version.format}`}
+                              className="w-full h-auto rounded border"
+                            />
+                            <a
+                              href={getFileUrl(path, { size, format })}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-primary hover:underline block"
+                            >
+                              Open in new tab →
+                            </a>
+                          </CardContent>
+                        </Card>
+                      )
+                    },
                   )}
                 </div>
               )}

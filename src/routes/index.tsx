@@ -16,7 +16,9 @@ import { getAllFiles } from '#/server/file-server'
 export const Route = createFileRoute('/')({
   loader: async () => {
     try {
-      return await getAllFiles()
+      // Pass AUTH_SECRET from env to allow accessing private files in frontend
+      const secret = process.env.AUTH_SECRET
+      return await getAllFiles({ data: { secret } })
     } catch (error) {
       console.error('Error loading files:', error)
       return []

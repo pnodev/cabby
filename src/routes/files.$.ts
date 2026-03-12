@@ -24,6 +24,7 @@ export const Route = createFileRoute('/files/$')({
           // Parse query parameters
           const sizeParam = url.searchParams.get('size') || undefined
           const formatParam = url.searchParams.get('format') || undefined
+          const secret = url.searchParams.get('secret') || undefined
 
           // Check if FILE_STORAGE_PATH is set
           const storagePath = process.env.FILE_STORAGE_PATH
@@ -52,7 +53,7 @@ export const Route = createFileRoute('/files/$')({
 
           // Get the file (with optional transformations)
           const { buffer, contentType } = await getFile({
-            data: { filePath: path, sizeParam, formatParam },
+            data: { filePath: path, sizeParam, formatParam, secret },
           })
 
           // Set long-running cache headers (1 year)

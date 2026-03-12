@@ -30,6 +30,16 @@ export function getStoragePath(): string {
   return storagePath
 }
 
+// Validate AUTH_SECRET for bypassing private file restrictions
+function validateSecret(providedSecret: string | undefined): boolean {
+  const expectedSecret = process.env.AUTH_SECRET
+  if (!expectedSecret) {
+    // If no AUTH_SECRET is configured, don't allow bypass
+    return false
+  }
+  return providedSecret === expectedSecret
+}
+
 // Get cache directory (relative to storage or absolute)
 // Ensures the cache directory exists
 export async function getCachePath(): Promise<string> {
@@ -220,6 +230,7 @@ const GetFileInputSchema = z.object({
   filePath: z.string(),
   sizeParam: z.string().optional(),
   formatParam: z.string().optional(),
+  secret: z.string().optional(),
 })
 
 export const getFile = createServerFn()
@@ -228,7 +239,7 @@ export const getFile = createServerFn()
     async (
       ctx,
     ): Promise<{ buffer: Buffer; contentType: string; cacheKey?: string }> => {
-      const { filePath, sizeParam, formatParam } = ctx.data
+      const { filePath, sizeParam, formatParam, secret } = ctx.data
       const path = await getPath()
       const fs = await getFs()
       const storagePath = getStoragePath()
@@ -250,6 +261,14 @@ export const getFile = createServerFn()
 
       // Check if original file exists
       if (!fs.existsSync(fullPath)) {
+        throw new Error('File not found')
+      }
+
+      // Check if file is public (private files return 404 unless AUTH_SECRET is provided)
+      const { isFilePublic } = await import('#/server/file-state')
+      const hasValidSecret = validateSecret(secret)
+
+      if (!hasValidSecret && !(await isFilePublic(normalizedPath))) {
         throw new Error('File not found')
       }
 
@@ -309,71 +328,81 @@ export function getContentType(formatOrExt: string): string {
   return contentTypes[format] || 'application/octet-stream'
 }
 
-export const getAllFiles = createServerFn().handler(
-  async (): Promise<
-    Array<{
-      path: string
-      isImage: boolean
-      hasCache: boolean
-      cacheCount: number
-    }>
-  > => {
-    const path = await getPath()
-    const fs = await getFs()
-    const storagePath = getStoragePath()
-    const cacheDir = await getCachePath()
-    const files: Array<{
-      path: string
-      isImage: boolean
-      hasCache: boolean
-      cacheCount: number
-    }> = []
+const GetAllFilesInputSchema = z.object({
+  secret: z.string().optional(),
+})
 
-    async function walkDirectory(
-      dir: string,
-      basePath: string = '',
-    ): Promise<void> {
-      try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true })
+export const getAllFiles = createServerFn()
+  .inputValidator(GetAllFilesInputSchema)
+  .handler(
+    async (): Promise<
+      Array<{
+        path: string
+        isImage: boolean
+        hasCache: boolean
+        cacheCount: number
+      }>
+    > => {
+      // secret parameter is accepted for API consistency but not needed here
+      // since getAllFiles already returns all files (frontend shows all)
+      const path = await getPath()
+      const fs = await getFs()
+      const storagePath = getStoragePath()
+      const cacheDir = await getCachePath()
+      const files: Array<{
+        path: string
+        isImage: boolean
+        hasCache: boolean
+        cacheCount: number
+      }> = []
 
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name)
-          const relativePath = basePath
-            ? path.join(basePath, entry.name)
-            : entry.name
+      async function walkDirectory(
+        dir: string,
+        basePath: string = '',
+      ): Promise<void> {
+        try {
+          const entries = fs.readdirSync(dir, { withFileTypes: true })
 
-          if (entry.isDirectory()) {
-            // Skip cache directory
-            if (entry.name !== '.cache') {
-              await walkDirectory(fullPath, relativePath)
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name)
+            const relativePath = basePath
+              ? path.join(basePath, entry.name)
+              : entry.name
+
+            if (entry.isDirectory()) {
+              // Skip cache directory
+              if (entry.name !== '.cache') {
+                await walkDirectory(fullPath, relativePath)
+              }
+            } else if (entry.isFile()) {
+              // Use helper function instead of Server Function for better performance
+              const isImage = await checkIsImageFile(entry.name)
+              // Only count cache for images
+              const cacheCount = isImage
+                ? await countCacheFiles(relativePath, cacheDir)
+                : 0
+              files.push({
+                path: relativePath,
+                isImage,
+                hasCache: cacheCount > 0,
+                cacheCount,
+              })
             }
-          } else if (entry.isFile()) {
-            // Use helper function instead of Server Function for better performance
-            const isImage = await checkIsImageFile(entry.name)
-            // Only count cache for images
-            const cacheCount = isImage
-              ? await countCacheFiles(relativePath, cacheDir)
-              : 0
-            files.push({
-              path: relativePath,
-              isImage,
-              hasCache: cacheCount > 0,
-              cacheCount,
-            })
           }
+        } catch (error) {
+          console.error(`Error reading directory ${dir}:`, error)
         }
-      } catch (error) {
-        console.error(`Error reading directory ${dir}:`, error)
       }
-    }
 
-    if (fs.existsSync(storagePath)) {
-      await walkDirectory(storagePath)
-    }
+      if (fs.existsSync(storagePath)) {
+        await walkDirectory(storagePath)
+      }
 
-    return files.sort((a, b) => a.path.localeCompare(b.path))
-  },
-)
+      // Return all files (no filtering - frontend shows all files)
+      // Private files are only blocked in /files/$ route (getFile handler)
+      return files.sort((a, b) => a.path.localeCompare(b.path))
+    },
+  )
 
 // Count cache files for a given image path
 async function countCacheFiles(
@@ -486,70 +515,41 @@ export const getCachedVersions = createServerFn()
     },
   )
 
-// export function getCachedVersions(imagePath: string): Array<{
-//   fileName: string
-//   size?: string
-//   format: string
-//   url: string
-// }> {
-//   const cacheDir = getCachePath()
-//   const fileName = basename(imagePath) // Includes extension
-//   const fileCacheDir = join(cacheDir, fileName)
-//   const versions: Array<{ fileName: string; size?: string; format: string; url: string }> = []
+// Server Function for loading file details (always runs server-side)
+const GetFileDetailsInputSchema = z.object({
+  filePath: z.string(),
+})
 
-//   if (!existsSync(fileCacheDir)) {
-//     return versions
-//   }
+export const getFileDetails = createServerFn()
+  .inputValidator(GetFileDetailsInputSchema)
+  .handler(
+    async ({ data }): Promise<{
+      path: string
+      isImage: boolean
+      versions: Array<{
+        fileName: string
+        size?: string
+        format: string
+        url: string
+      }>
+      isPublic: boolean
+      secret: string | undefined
+    }> => {
+      const { getCachedVersions, isImageFile } = await import('#/server/file-server')
+      const { isFilePublic } = await import('#/server/file-state')
 
-//   try {
-//     const cacheFiles = readdirSync(fileCacheDir, { withFileTypes: true })
+      const path = decodeURIComponent(data.filePath)
+      const isImage = await isImageFile({ data: { filePath: path } })
+      const versions = isImage
+        ? await getCachedVersions({ data: { imagePath: path } })
+        : []
+      const isPublic = await isFilePublic(path)
+      const secret = process.env.AUTH_SECRET
 
-//     for (const entry of cacheFiles) {
-//       if (entry.isFile()) {
-//         const cacheFileName = entry.name
-//         // Parse cache file name: {baseName}_{width}x{height}.{format} or {baseName}.{format}
-//         const match = cacheFileName.match(/^(.+?)(?:_(\d+)x(\d+))?\.(.+)$/)
+      return { path, isImage, versions, isPublic, secret }
+    },
+  )
 
-//         if (match) {
-//           const [, , width, height, format] = match
-
-//           // Build URL with parameters
-//           const params = new URLSearchParams()
-//           if (width && height) {
-//             params.set('size', `${width}x${height}`)
-//           }
-//           if (format) {
-//             params.set('format', format)
-//           }
-
-//           const url = `/files/${imagePath}${params.toString() ? `?${params.toString()}` : ''}`
-
-//           versions.push({
-//             fileName: cacheFileName,
-//             size: width && height ? `${width}x${height}` : undefined,
-//             format,
-//             url,
-//           })
-//         }
-//       }
-//     }
-
-//     return versions.sort((a, b) => {
-//       // Sort by size first, then by format
-//       if (a.size && !b.size) return -1
-//       if (!a.size && b.size) return 1
-//       if (a.size && b.size) {
-//         const aSize = parseInt(a.size.split('x')[0])
-//         const bSize = parseInt(b.size.split('x')[0])
-//         if (aSize !== bSize) return aSize - bSize
-//       }
-//       return a.format.localeCompare(b.format)
-//     })
-//   } catch (error) {
-//     console.error('Error getting cached versions:', error)
-//     return versions
-//   }
-// }
 
 // Upload a file to the storage directory
 export async function uploadFile(
