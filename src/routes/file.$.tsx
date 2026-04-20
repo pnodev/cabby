@@ -186,7 +186,7 @@ function FileDetail() {
                               className="w-full h-auto rounded border"
                             />
                             <a
-                              href={getFileUrl(path, { size, format }, secret)}
+                              href={getFileUrl(path, { size, format })}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-sm text-primary hover:underline block"
