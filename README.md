@@ -27,11 +27,6 @@ Before running the application, you need to set the following environment variab
   FILE_CACHE_PATH=/path/to/your/cache
   ```
 
-- **`AUTH_SECRET`** - Secret key for accessing private files. When provided, allows bypassing private file restrictions in the frontend and via query parameter (`?secret=...`). If not set, private files remain inaccessible.
-  ```bash
-  AUTH_SECRET=your-secret-key-here
-  ```
-
 ### Example `.env` file
 
 Create a `.env` file in the project root:
@@ -39,7 +34,6 @@ Create a `.env` file in the project root:
 ```bash
 FILE_STORAGE_PATH=/Users/username/Documents/filestorage
 FILE_CACHE_PATH=/Users/username/Documents/filestorage/.cache
-AUTH_SECRET=your-secret-key-here
 ```
 
 ## Deployment
@@ -138,17 +132,8 @@ curl -X POST http://localhost:3000/upload \
 The application includes a web-based management interface:
 
 - **`GET /`** - List all files in storage with their cache status
-- **`GET /file/{path}`** - View details for a specific file, including cached versions (for images). On this page, you can toggle the visibility status of files (public/private) using the "Visible?" switch.
+- **`GET /file/{path}`** - View details for a specific file, including cached versions (for images)
 - **`GET /upload`** - Upload interface for files
-
-#### File Visibility
-
-Files can be marked as public or private. Private files are:
-- Not listed in the file listing (unless `AUTH_SECRET` is configured)
-- Not accessible via `/files/{path}` (returns 404)
-- Accessible with `AUTH_SECRET` via query parameter: `/files/{path}?secret={AUTH_SECRET}`
-
-You can manage file visibility on the file detail page (`/file/{path}`) using the visibility toggle switch.
 
 ## Getting Started
 
