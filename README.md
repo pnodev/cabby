@@ -27,6 +27,16 @@ Before running the application, you need to set the following environment variab
   FILE_CACHE_PATH=/path/to/your/cache
   ```
 
+- **`AUTH_SECRET`** - Secret key for accessing private files. When provided, allows bypassing private file restrictions in the frontend and via query parameter (`?secret=...`). If not set, private files remain inaccessible.
+  ```bash
+  AUTH_SECRET=your-secret-key-here
+  ```
+
+- **`ALLOWED_ORIGIN`** - Allowed origin for server functions that return secrets. When provided, only requests from this origin will receive the `AUTH_SECRET` in server function responses. Supports both formats: `localhost:3000` or `http://localhost:3000`. If not set, no origin is allowed (security by default).
+  ```bash
+  ALLOWED_ORIGIN=localhost:3000
+  ```
+
 ### Example `.env` file
 
 Create a `.env` file in the project root:
@@ -34,6 +44,8 @@ Create a `.env` file in the project root:
 ```bash
 FILE_STORAGE_PATH=/Users/username/Documents/filestorage
 FILE_CACHE_PATH=/Users/username/Documents/filestorage/.cache
+AUTH_SECRET=your-secret-key-here
+ALLOWED_ORIGIN=localhost:3000
 ```
 
 ## Deployment
@@ -132,8 +144,17 @@ curl -X POST http://localhost:3000/upload \
 The application includes a web-based management interface:
 
 - **`GET /`** - List all files in storage with their cache status
-- **`GET /file/{path}`** - View details for a specific file, including cached versions (for images)
+- **`GET /file/{path}`** - View details for a specific file, including cached versions (for images). On this page, you can toggle the visibility status of files (public/private) using the "Visible?" switch.
 - **`GET /upload`** - Upload interface for files
+
+#### File Visibility
+
+Files can be marked as public or private. Private files are:
+- Not listed in the file listing (unless `AUTH_SECRET` is configured)
+- Not accessible via `/files/{path}` (returns 404)
+- Accessible with `AUTH_SECRET` via query parameter: `/files/{path}?secret={AUTH_SECRET}`
+
+You can manage file visibility on the file detail page (`/file/{path}`) using the visibility toggle switch.
 
 ## Getting Started
 
