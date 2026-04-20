@@ -9,8 +9,6 @@ import {
   CardTitle,
 } from '#/components/ui/card'
 import { Button } from '#/components/ui/button'
-import { Switch } from '#/components/ui/switch'
-import { Field, FieldContent, FieldLabel } from '#/components/ui/field'
 import { Upload, File, CheckCircle2, AlertCircle } from 'lucide-react'
 
 export const Route = createFileRoute('/upload')({
@@ -19,11 +17,10 @@ export const Route = createFileRoute('/upload')({
       POST: async ({ request }) => {
         try {
           const formData = await request.formData()
-          const file = formData.get('file') as File
-          const path = formData.get('path') as string
-          const isPublic = formData.get('isPublic') === 'true'
+          const fileEntry = formData.get('file')
+          const path = formData.get('path') as string | null
 
-          if (!file) {
+          if (!fileEntry || !(fileEntry instanceof File)) {
             return json(
               { success: false, error: 'No file provided' },
               { status: 400 },
@@ -38,17 +35,14 @@ export const Route = createFileRoute('/upload')({
           }
 
           // Convert File to Buffer
-          const arrayBuffer = await file.arrayBuffer()
+          const arrayBuffer = await fileEntry.arrayBuffer()
           const buffer = Buffer.from(arrayBuffer)
 
           // Dynamic import to ensure this only runs server-side
           const { uploadFile } = await import('#/server/file-server')
-          const { setFileVisibility } = await import('#/server/file-state')
           const result = await uploadFile(path, buffer)
 
           if (result.success) {
-            // Set file visibility based on upload parameter
-            setFileVisibility(result.path, isPublic)
             return json({ success: true, path: result.path })
           } else {
             return json(
@@ -76,7 +70,6 @@ function UploadPage() {
   const router = useRouter()
   const [file, setFile] = React.useState<File | null>(null)
   const [path, setPath] = React.useState<string>('')
-  const [isPublic, setIsPublic] = React.useState<boolean>(true)
   const [uploading, setUploading] = React.useState(false)
   const [result, setResult] = React.useState<{
     success: boolean
@@ -113,30 +106,26 @@ function UploadPage() {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('path', path.trim())
-      formData.append('isPublic', isPublic.toString())
 
       const response = await fetch('/upload', {
         method: 'POST',
         body: formData,
       })
 
-      const result = (await response.json()) as {
+      const payload = (await response.json()) as {
         success: boolean
         path?: string
         error?: string
       }
-      setResult(result)
+      setResult(payload)
 
-      if (result.success) {
+      if (payload.success) {
         // Reset form after successful upload
         setFile(null)
         setPath('')
-        setIsPublic(true)
         // Reset file input
-        const fileInput = document.getElementById(
-          'file-input',
-        ) as HTMLInputElement
-        if (fileInput) {
+        const fileInput = document.getElementById('file-input')
+        if (fileInput instanceof HTMLInputElement) {
           fileInput.value = ''
         }
         // Redirect to file list after a short delay
@@ -223,33 +212,13 @@ function UploadPage() {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Field orientation="horizontal" className="w-fit">
-                  <FieldContent>
-                    <FieldLabel htmlFor="switch-visible">
-                      Public (visible in file listing)
-                    </FieldLabel>
-                  </FieldContent>
-                  <Switch
-                    checked={isPublic}
-                    onCheckedChange={setIsPublic}
-                    id="switch-visible"
-                    disabled={uploading}
-                  />
-                </Field>
-                <p className="text-xs text-muted-foreground">
-                  Public files are visible in the file listing and accessible via
-                  /files/ route. Private files are hidden from listings and return
-                  404 unless accessed with AUTH_SECRET.
-                </p>
-              </div>
-
               {result && (
                 <div
-                  className={`p-4 rounded-md border ${result.success
-                    ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
-                    : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
-                    }`}
+                  className={`p-4 rounded-md border ${
+                    result.success
+                      ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
+                      : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+                  }`}
                 >
                   <div className="flex items-center gap-2">
                     {result.success ? (
@@ -294,12 +263,9 @@ function UploadPage() {
                   onClick={() => {
                     setFile(null)
                     setPath('')
-                    setIsPublic(true)
                     setResult(null)
-                    const fileInput = document.getElementById(
-                      'file-input',
-                    ) as HTMLInputElement
-                    if (fileInput) {
+                    const fileInput = document.getElementById('file-input')
+                    if (fileInput instanceof HTMLInputElement) {
                       fileInput.value = ''
                     }
                   }}

@@ -11,24 +11,23 @@ import {
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { ExternalLink, Grid3x3, List, Upload } from 'lucide-react'
-import { getAllFilesWithSecret } from '#/server/file-server'
+import { getAllFiles } from '#/server/file-server'
 import { getFileUrl } from './file.$'
 
 export const Route = createFileRoute('/')({
   loader: async () => {
     try {
-      // Call server function - always runs server-side
-      return await getAllFilesWithSecret()
+      return await getAllFiles()
     } catch (error) {
       console.error('Error loading files:', error)
-      return { files: [], secret: undefined }
+      return []
     }
   },
   component: App,
 })
 
 function App() {
-  const { files, secret } = Route.useLoaderData()
+  const files = Route.useLoaderData()
   const [viewMode, setViewMode] = React.useState<'card' | 'list'>('card')
 
   return (
@@ -90,7 +89,7 @@ function App() {
                 <CardHeader>
                   <CardAction>
                     <a
-                      href={getFileUrl(file.path, undefined, secret)}
+                      href={getFileUrl(file.path)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-muted-foreground hover:text-foreground transition-colors"

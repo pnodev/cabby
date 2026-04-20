@@ -30,99 +30,6 @@ export function getStoragePath(): string {
   return storagePath
 }
 
-// Validate AUTH_SECRET for bypassing private file restrictions
-function validateSecret(providedSecret: string | undefined): boolean {
-  const expectedSecret = process.env.AUTH_SECRET
-  if (!expectedSecret) {
-    // If no AUTH_SECRET is configured, don't allow bypass
-    return false
-  }
-  return providedSecret === expectedSecret
-}
-
-// Check if request origin matches ALLOWED_ORIGIN from environment variable
-function isOriginAllowed(request?: Request): boolean {
-  if (!request) return false
-
-  const allowedOrigin = process.env.ALLOWED_ORIGIN
-  if (!allowedOrigin) {
-    // If no ALLOWED_ORIGIN is configured, deny access (security by default)
-    return false
-  }
-
-  // Parse allowed origin (supports both "localhost:3000" and "http://localhost:3000")
-  let allowedHostname: string
-  let allowedPort: string | null = null
-  let allowedProtocol: string | null = null
-  try {
-    // Try parsing as URL first
-    if (allowedOrigin.includes('://')) {
-      const allowedUrl = new URL(allowedOrigin)
-      allowedHostname = allowedUrl.hostname
-      allowedPort = allowedUrl.port || null
-      allowedProtocol = allowedUrl.protocol
-    } else {
-      // Parse as hostname:port
-      const parts = allowedOrigin.split(':')
-      allowedHostname = parts[0]
-      allowedPort = parts[1] || null
-      allowedProtocol = null // No protocol specified
-    }
-  } catch {
-    // Invalid ALLOWED_ORIGIN format
-    return false
-  }
-
-  const origin = request.headers.get('origin')
-  const referer = request.headers.get('referer')
-
-  // Check origin header
-  if (origin) {
-    try {
-      const originUrl = new URL(origin)
-      const originPort = originUrl.port || null
-
-      // Compare hostname and port
-      if (originUrl.hostname === allowedHostname) {
-        // If protocol was specified in ALLOWED_ORIGIN, also check protocol
-        if (allowedProtocol && originUrl.protocol !== allowedProtocol) {
-          return false
-        }
-        // Compare ports directly
-        if (originPort === allowedPort) {
-          return true
-        }
-      }
-    } catch {
-      // Invalid origin URL
-    }
-  }
-
-  // Check referer header as fallback (referer contains full URL, extract origin)
-  if (referer) {
-    try {
-      const refererUrl = new URL(referer)
-      const refererPort = refererUrl.port || null
-
-      // Compare hostname and port
-      if (refererUrl.hostname === allowedHostname) {
-        // If protocol was specified in ALLOWED_ORIGIN, also check protocol
-        if (allowedProtocol && refererUrl.protocol !== allowedProtocol) {
-          return false
-        }
-        // Compare ports directly
-        if (refererPort === allowedPort) {
-          return true
-        }
-      }
-    } catch {
-      // Invalid referer URL
-    }
-  }
-
-  return false
-}
-
 // Get cache directory (relative to storage or absolute)
 // Ensures the cache directory exists
 export async function getCachePath(): Promise<string> {
@@ -313,7 +220,6 @@ const GetFileInputSchema = z.object({
   filePath: z.string(),
   sizeParam: z.string().optional(),
   formatParam: z.string().optional(),
-  secret: z.string().optional(),
 })
 
 export const getFile = createServerFn()
@@ -322,7 +228,7 @@ export const getFile = createServerFn()
     async (
       ctx,
     ): Promise<{ buffer: Buffer; contentType: string; cacheKey?: string }> => {
-      const { filePath, sizeParam, formatParam, secret } = ctx.data
+      const { filePath, sizeParam, formatParam } = ctx.data
       const path = await getPath()
       const fs = await getFs()
       const storagePath = getStoragePath()
@@ -343,7 +249,7 @@ export const getFile = createServerFn()
       }
 
       // Block dot files and files in dot directories
-      const pathParts = normalizedPath.split(/[\/\\]/)
+      const pathParts = normalizedPath.split(/[/\\]/)
       const hasDotFileOrDir = pathParts.some((part) => part.startsWith('.'))
       if (hasDotFileOrDir) {
         throw new Error('File not found')
@@ -351,14 +257,6 @@ export const getFile = createServerFn()
 
       // Check if original file exists
       if (!fs.existsSync(fullPath)) {
-        throw new Error('File not found')
-      }
-
-      // Check if file is public (private files return 404 unless AUTH_SECRET is provided)
-      const { isFilePublic } = await import('#/server/file-state')
-      const hasValidSecret = validateSecret(secret)
-
-      if (!hasValidSecret && !(await isFilePublic(normalizedPath))) {
         throw new Error('File not found')
       }
 
@@ -418,106 +316,71 @@ export function getContentType(formatOrExt: string): string {
   return contentTypes[format] || 'application/octet-stream'
 }
 
-const GetAllFilesInputSchema = z.object({
-  secret: z.string().optional(),
-})
-
-export const getAllFiles = createServerFn()
-  .inputValidator(GetAllFilesInputSchema)
-  .handler(
-    async (): Promise<
-      Array<{
-        path: string
-        isImage: boolean
-        hasCache: boolean
-        cacheCount: number
-      }>
-    > => {
-      // secret parameter is accepted for API consistency but not needed here
-      // since getAllFiles already returns all files (frontend shows all)
-      const path = await getPath()
-      const fs = await getFs()
-      const storagePath = getStoragePath()
-      const cacheDir = await getCachePath()
-      const files: Array<{
-        path: string
-        isImage: boolean
-        hasCache: boolean
-        cacheCount: number
-      }> = []
-
-      async function walkDirectory(
-        dir: string,
-        basePath: string = '',
-      ): Promise<void> {
-        try {
-          const entries = fs.readdirSync(dir, { withFileTypes: true })
-
-          for (const entry of entries) {
-            // Skip dot files and dot directories (e.g., .file-state.json, .cache, .git, etc.)
-            if (entry.name.startsWith('.')) {
-              continue
-            }
-
-            const fullPath = path.join(dir, entry.name)
-            const relativePath = basePath
-              ? path.join(basePath, entry.name)
-              : entry.name
-
-            if (entry.isDirectory()) {
-              await walkDirectory(fullPath, relativePath)
-            } else if (entry.isFile()) {
-              // Use helper function instead of Server Function for better performance
-              const isImage = await checkIsImageFile(entry.name)
-              // Only count cache for images
-              const cacheCount = isImage
-                ? await countCacheFiles(relativePath, cacheDir)
-                : 0
-              files.push({
-                path: relativePath,
-                isImage,
-                hasCache: cacheCount > 0,
-                cacheCount,
-              })
-            }
-          }
-        } catch (error) {
-          console.error(`Error reading directory ${dir}:`, error)
-        }
-      }
-
-      if (fs.existsSync(storagePath)) {
-        await walkDirectory(storagePath)
-      }
-
-      // Return all files (no filtering - frontend shows all files)
-      // Private files are only blocked in /files/$ route (getFile handler)
-      return files.sort((a, b) => a.path.localeCompare(b.path))
-    },
-  )
-
-// Server Function for getting all files with secret (always runs server-side)
-export const getAllFilesWithSecret = createServerFn().handler(
-  async (ctx): Promise<{
-    files: Array<{
+export const getAllFiles = createServerFn().handler(
+  async (): Promise<
+    Array<{
       path: string
       isImage: boolean
       hasCache: boolean
       cacheCount: number
     }>
-    secret: string | undefined
-  }> => {
-    // @ts-expect-error - request may not be in type definition but is available at runtime
-    const request = ctx.request as Request | undefined
+  > => {
+    const path = await getPath()
+    const fs = await getFs()
+    const storagePath = getStoragePath()
+    const cacheDir = await getCachePath()
+    const files: Array<{
+      path: string
+      isImage: boolean
+      hasCache: boolean
+      cacheCount: number
+    }> = []
 
-    const originAllowed = isOriginAllowed(request)
-    if (!originAllowed) {
-      throw new Error('Unauthorized')
+    async function walkDirectory(
+      dir: string,
+      basePath: string = '',
+    ): Promise<void> {
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true })
+
+        for (const entry of entries) {
+          // Skip dot files and dot directories (e.g., .cache, .git, etc.)
+          if (entry.name.startsWith('.')) {
+            continue
+          }
+
+          const fullPath = path.join(dir, entry.name)
+          const relativePath = basePath
+            ? path.join(basePath, entry.name)
+            : entry.name
+
+          if (entry.isDirectory()) {
+            await walkDirectory(fullPath, relativePath)
+          } else if (entry.isFile()) {
+            // Use helper function instead of Server Function for better performance
+            const isImage = await checkIsImageFile(entry.name)
+            // Only count cache for images
+            const cacheCount = isImage
+              ? await countCacheFiles(relativePath, cacheDir)
+              : 0
+            files.push({
+              path: relativePath,
+              isImage,
+              hasCache: cacheCount > 0,
+              cacheCount,
+            })
+          }
+        }
+      } catch (error) {
+        console.error(`Error reading directory ${dir}:`, error)
+      }
     }
 
-    const secret = originAllowed ? process.env.AUTH_SECRET : undefined
-    const files = await getAllFiles({ data: { secret } })
-    return { files, secret }
+    if (fs.existsSync(storagePath)) {
+      await walkDirectory(storagePath)
+    }
+
+    return files.sort((a, b) => a.path.localeCompare(b.path))
   },
 )
 
@@ -640,7 +503,9 @@ const GetFileDetailsInputSchema = z.object({
 export const getFileDetails = createServerFn()
   .inputValidator(GetFileDetailsInputSchema)
   .handler(
-    async (ctx): Promise<{
+    async (
+      ctx,
+    ): Promise<{
       path: string
       isImage: boolean
       versions: Array<{
@@ -649,24 +514,15 @@ export const getFileDetails = createServerFn()
         format: string
         url: string
       }>
-      isPublic: boolean
-      secret: string | undefined
     }> => {
-      // @ts-expect-error - request may not be in type definition but is available at runtime
-      const request = ctx.request as Request | undefined
       const { data } = ctx
-      const { getCachedVersions, isImageFile } = await import('#/server/file-server')
-      const { isFilePublic } = await import('#/server/file-state')
-
       const path = decodeURIComponent(data.filePath)
-      const isImage = await isImageFile({ data: { filePath: path } })
+      const isImage = await checkIsImageFile(path)
       const versions = isImage
         ? await getCachedVersions({ data: { imagePath: path } })
         : []
-      const isPublic = await isFilePublic(path)
-      const secret = isOriginAllowed(request) ? process.env.AUTH_SECRET : undefined
 
-      return { path, isImage, versions, isPublic, secret }
+      return { path, isImage, versions }
     },
   )
 
