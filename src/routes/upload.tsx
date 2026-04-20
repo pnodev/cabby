@@ -9,8 +9,6 @@ import {
   CardTitle,
 } from '#/components/ui/card'
 import { Button } from '#/components/ui/button'
-import { Switch } from '#/components/ui/switch'
-import { Field, FieldContent, FieldLabel } from '#/components/ui/field'
 import { Upload, File, CheckCircle2, AlertCircle } from 'lucide-react'
 
 export const Route = createFileRoute('/upload')({
@@ -113,7 +111,6 @@ function UploadPage() {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('path', path.trim())
-      formData.append('isPublic', isPublic.toString())
 
       const response = await fetch('/upload', {
         method: 'POST',
@@ -131,7 +128,6 @@ function UploadPage() {
         // Reset form after successful upload
         setFile(null)
         setPath('')
-        setIsPublic(true)
         // Reset file input
         const fileInput = document.getElementById(
           'file-input',
@@ -223,32 +219,11 @@ function UploadPage() {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Field orientation="horizontal" className="w-fit">
-                  <FieldContent>
-                    <FieldLabel htmlFor="switch-visible">
-                      Public (visible in file listing)
-                    </FieldLabel>
-                  </FieldContent>
-                  <Switch
-                    checked={isPublic}
-                    onCheckedChange={setIsPublic}
-                    id="switch-visible"
-                    disabled={uploading}
-                  />
-                </Field>
-                <p className="text-xs text-muted-foreground">
-                  Public files are visible in the file listing and accessible via
-                  /files/ route. Private files are hidden from listings and return
-                  404 unless accessed with AUTH_SECRET.
-                </p>
-              </div>
-
               {result && (
                 <div
                   className={`p-4 rounded-md border ${result.success
-                    ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
-                    : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+                      ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
+                      : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
                     }`}
                 >
                   <div className="flex items-center gap-2">
@@ -294,7 +269,6 @@ function UploadPage() {
                   onClick={() => {
                     setFile(null)
                     setPath('')
-                    setIsPublic(true)
                     setResult(null)
                     const fileInput = document.getElementById(
                       'file-input',
