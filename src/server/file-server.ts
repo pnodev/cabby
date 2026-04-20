@@ -259,13 +259,6 @@ export const getFile = createServerFn()
         throw new Error('File not found')
       }
 
-      // Block dot files and files in dot directories
-      const pathParts = normalizedPath.split(/[\/\\]/)
-      const hasDotFileOrDir = pathParts.some((part) => part.startsWith('.'))
-      if (hasDotFileOrDir) {
-        throw new Error('File not found')
-      }
-
       // Check if original file exists
       if (!fs.existsSync(fullPath)) {
         throw new Error('File not found')
@@ -371,18 +364,16 @@ export const getAllFiles = createServerFn()
           const entries = fs.readdirSync(dir, { withFileTypes: true })
 
           for (const entry of entries) {
-            // Skip dot files and dot directories (e.g., .file-state.json, .cache, .git, etc.)
-            if (entry.name.startsWith('.')) {
-              continue
-            }
-
             const fullPath = path.join(dir, entry.name)
             const relativePath = basePath
               ? path.join(basePath, entry.name)
               : entry.name
 
             if (entry.isDirectory()) {
-              await walkDirectory(fullPath, relativePath)
+              // Skip cache directory
+              if (entry.name !== '.cache') {
+                await walkDirectory(fullPath, relativePath)
+              }
             } else if (entry.isFile()) {
               // Use helper function instead of Server Function for better performance
               const isImage = await checkIsImageFile(entry.name)
