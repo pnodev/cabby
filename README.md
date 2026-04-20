@@ -32,11 +32,6 @@ Before running the application, you need to set the following environment variab
   AUTH_SECRET=your-secret-key-here
   ```
 
-- **`ALLOWED_ORIGIN`** - Allowed origin for server functions that return secrets. When provided, only requests from this origin will receive the `AUTH_SECRET` in server function responses. Supports both formats: `localhost:3000` or `http://localhost:3000`. If not set, no origin is allowed (security by default).
-  ```bash
-  ALLOWED_ORIGIN=localhost:3000
-  ```
-
 ### Example `.env` file
 
 Create a `.env` file in the project root:
@@ -45,7 +40,6 @@ Create a `.env` file in the project root:
 FILE_STORAGE_PATH=/Users/username/Documents/filestorage
 FILE_CACHE_PATH=/Users/username/Documents/filestorage/.cache
 AUTH_SECRET=your-secret-key-here
-ALLOWED_ORIGIN=localhost:3000
 ```
 
 ## Deployment
