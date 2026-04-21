@@ -58,7 +58,13 @@ export const Route = createFileRoute('/upload')({
               .map((segment) => encodeURIComponent(segment))
               .join('/')
             const url = new URL(`/files/${encodedPath}`, origin).href
-            return json({ success: true, path: result.path, url })
+            return json({
+              success: true,
+              path: result.path,
+              url,
+              mimeType: file.type || 'application/octet-stream',
+              size: file.size,
+            })
           } else {
             return json(
               { success: false, error: result.error || 'Upload failed' },
@@ -90,6 +96,8 @@ function UploadPage() {
     success: boolean
     path?: string
     url?: string
+    mimeType?: string
+    size?: number
     error?: string
   } | null>(null)
 
@@ -132,6 +140,8 @@ function UploadPage() {
         success: boolean
         path?: string
         url?: string
+        mimeType?: string
+        size?: number
         error?: string
       }
       setResult(result)
