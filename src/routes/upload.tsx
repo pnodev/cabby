@@ -47,7 +47,13 @@ export const Route = createFileRoute('/upload')({
           const result = await uploadFile(path, buffer)
 
           if (result.success) {
-            return json({ success: true, path: result.path })
+            const requestUrl = new URL(request.url)
+            const encodedPath = result.path
+              .split('/')
+              .map((segment) => encodeURIComponent(segment))
+              .join('/')
+            const url = new URL(`/files/${encodedPath}`, requestUrl.origin).href
+            return json({ success: true, path: result.path, url })
           } else {
             return json(
               { success: false, error: result.error || 'Upload failed' },
@@ -78,6 +84,7 @@ function UploadPage() {
   const [result, setResult] = React.useState<{
     success: boolean
     path?: string
+    url?: string
     error?: string
   } | null>(null)
 
@@ -119,6 +126,7 @@ function UploadPage() {
       const result = (await response.json()) as {
         success: boolean
         path?: string
+        url?: string
         error?: string
       }
       setResult(result)
