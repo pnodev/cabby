@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { requireWebUiEnabled } from '#/server/web-ui'
 import {
   Card,
   CardContent,
@@ -10,6 +11,7 @@ import { Badge } from '#/components/ui/badge'
 
 export const Route = createFileRoute('/file/$')({
   loader: async ({ params }) => {
+    await requireWebUiEnabled()
     try {
       // Dynamic import to ensure this only runs server-side
       const { getCachedVersions, isImageFile } =

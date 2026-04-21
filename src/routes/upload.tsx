@@ -10,8 +10,12 @@ import {
 } from '#/components/ui/card'
 import { Button } from '#/components/ui/button'
 import { Upload, File, CheckCircle2, AlertCircle } from 'lucide-react'
+import { requireWebUiEnabled } from '#/server/web-ui'
 
 export const Route = createFileRoute('/upload')({
+  loader: async () => {
+    await requireWebUiEnabled()
+  },
   server: {
     handlers: {
       POST: async ({ request }) => {

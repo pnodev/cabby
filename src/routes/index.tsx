@@ -12,9 +12,11 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { ExternalLink, Grid3x3, List, Upload } from 'lucide-react'
 import { getAllFiles } from '#/server/file-server'
+import { requireWebUiEnabled } from '#/server/web-ui'
 
 export const Route = createFileRoute('/')({
   loader: async () => {
+    await requireWebUiEnabled()
     try {
       return await getAllFiles()
     } catch (error) {
