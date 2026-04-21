@@ -51,12 +51,13 @@ export const Route = createFileRoute('/upload')({
           const result = await uploadFile(path, buffer)
 
           if (result.success) {
-            const requestUrl = new URL(request.url)
+            const { getPublicOrigin } = await import('#/server/public-origin')
+            const origin = getPublicOrigin(request)
             const encodedPath = result.path
               .split('/')
               .map((segment) => encodeURIComponent(segment))
               .join('/')
-            const url = new URL(`/files/${encodedPath}`, requestUrl.origin).href
+            const url = new URL(`/files/${encodedPath}`, origin).href
             return json({ success: true, path: result.path, url })
           } else {
             return json(
