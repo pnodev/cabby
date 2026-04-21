@@ -593,3 +593,51 @@ export async function uploadFile(
     }
   }
 }
+
+export async function deleteFile(
+  filePath: string,
+): Promise<{ success: boolean; path: string; error?: string; deletedCache?: boolean }> {
+  try {
+    const path = await getPath()
+    const fs = await getFs()
+    const storagePath = getStoragePath()
+
+    // Decode and normalize the file path
+    const decodedPath = decodeURIComponent(filePath)
+    const normalizedPath = path
+      .normalize(decodedPath)
+      .replace(/^(\.\.(\/|\\|$))+/, '')
+    const fullPath = path.resolve(storagePath, normalizedPath)
+    const resolvedStoragePath = path.resolve(storagePath)
+
+    // Security check: ensure the resolved path is within the storage directory
+    if (!fullPath.startsWith(resolvedStoragePath)) {
+      return { success: false, path: filePath, error: 'Invalid file path' }
+    }
+
+    if (!fs.existsSync(fullPath)) {
+      return { success: false, path: normalizedPath, error: 'File not found' }
+    }
+
+    fs.unlinkSync(fullPath)
+
+    // Best-effort: remove cache directory for this file, if present
+    try {
+      const cacheDir = await getCacheDirForFile(normalizedPath)
+      if (fs.existsSync(cacheDir)) {
+        fs.rmSync(cacheDir, { recursive: true, force: true })
+      }
+    } catch {
+      // ignore cache cleanup errors
+    }
+
+    return { success: true, path: normalizedPath, deletedCache: true }
+  } catch (error) {
+    console.error('Error deleting file:', error)
+    return {
+      success: false,
+      path: filePath,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}

@@ -97,6 +97,63 @@ export const Route = createFileRoute('/files/$')({
           })
         }
       },
+      DELETE: async ({ request }) => {
+        try {
+          const { requireWriteToken } = await import('#/server/request-auth')
+          const unauthorized = requireWriteToken(request)
+          if (unauthorized) return unauthorized
+
+          const { deleteFile } = await import('#/server/file-server')
+
+          const url = new URL(request.url)
+          const pathMatch = url.pathname.match(/^\/files\/(.+)$/)
+          if (!pathMatch) {
+            return new Response('Invalid path', {
+              status: 400,
+              headers: { 'Content-Type': 'text/plain' },
+            })
+          }
+
+          const path = pathMatch[1]
+          const result = await deleteFile(path)
+
+          if (!result.success) {
+            if (result.error === 'File not found') {
+              return new Response('File not found', {
+                status: 404,
+                headers: { 'Content-Type': 'text/plain' },
+              })
+            }
+            if (result.error === 'Invalid file path') {
+              return new Response('Invalid path', {
+                status: 400,
+                headers: { 'Content-Type': 'text/plain' },
+              })
+            }
+            return new Response(result.error || 'Delete failed', {
+              status: 500,
+              headers: { 'Content-Type': 'text/plain' },
+            })
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              path: result.path,
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          )
+        } catch (error) {
+          console.error('Error deleting file:', error)
+          return new Response('Internal server error', {
+            status: 500,
+            headers: { 'Content-Type': 'text/plain' },
+          })
+        }
+      },
     },
   },
 })

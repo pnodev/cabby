@@ -20,6 +20,10 @@ export const Route = createFileRoute('/upload')({
     handlers: {
       POST: async ({ request }) => {
         try {
+          const { requireWriteToken } = await import('#/server/request-auth')
+          const unauthorized = requireWriteToken(request)
+          if (unauthorized) return unauthorized
+
           const formData = await request.formData()
           const file = formData.get('file') as File
           const path = formData.get('path') as string

@@ -27,6 +27,8 @@ Before running the application, you need to set the following environment variab
   FILE_CACHE_PATH=/path/to/your/cache
   ```
 
+- **`WRITE_AUTH_TOKEN`** - Token required for write operations (upload and delete). Clients must send it via the `Authorization` header (`Bearer <token>` or just `<token>`).
+
 ### Example `.env` file
 
 Create a `.env` file in the project root:
@@ -34,6 +36,7 @@ Create a `.env` file in the project root:
 ```bash
 FILE_STORAGE_PATH=/Users/username/Documents/filestorage
 FILE_CACHE_PATH=/Users/username/Documents/filestorage/.cache
+WRITE_AUTH_TOKEN=change-me
 ```
 
 ## Deployment
