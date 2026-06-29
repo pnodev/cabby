@@ -1,8 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { getCorsPreflightHeaders, withCorsHeaders } from '#/server/cors'
 
 export const Route = createFileRoute('/files/$')({
   server: {
     handlers: {
+      OPTIONS: async ({ request }) => {
+        const headers = getCorsPreflightHeaders(request)
+        if (!headers['Access-Control-Allow-Origin']) {
+          return new Response(null, { status: 403 })
+        }
+
+        return new Response(null, { status: 204, headers })
+      },
       GET: async ({ request }) => {
         try {
           // Dynamic import to ensure this only runs server-side
@@ -56,7 +65,7 @@ export const Route = createFileRoute('/files/$')({
           })
 
           // Set long-running cache headers (1 year)
-          const headers = new Headers({
+          const headers = withCorsHeaders(request, {
             'Content-Type': contentType,
             'Cache-Control': 'public, max-age=31536000, immutable',
             ETag: `"${Buffer.from(path).toString('base64')}"`,

@@ -304,6 +304,12 @@ export function getContentType(formatOrExt: string): string {
     pdf: 'application/pdf',
     txt: 'text/plain',
     json: 'application/json',
+    css: 'text/css',
+    woff: 'font/woff',
+    woff2: 'font/woff2',
+    ttf: 'font/ttf',
+    otf: 'font/otf',
+    eot: 'application/vnd.ms-fontobject',
   }
 
   return contentTypes[format] || 'application/octet-stream'
