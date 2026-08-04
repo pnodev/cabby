@@ -108,32 +108,70 @@ export async function getOutputFormat(
   return ext || 'jpg'
 }
 
+/**
+ * Normalize a storage-relative file path for cache lookup.
+ * Must preserve the full relative path (not just basename) so files that share
+ * a filename in different folders cannot collide in the transform cache.
+ */
+export function normalizeRelativeStoragePath(
+  filePath: string,
+  pathApi: { normalize: (p: string) => string },
+): string {
+  const decoded = decodeURIComponent(filePath)
+  return pathApi
+    .normalize(decoded)
+    .replace(/^(\.\.(\/|\\|$))+/, '')
+    .replace(/^[/\\]+/, '')
+}
+
 // Generate cache key from file path and transformation parameters
-// Returns just the filename part (without the directory structure)
+// Returns just the filename part (directory is handled by getCacheDirForFile)
 export async function generateCacheKey(
   filePath: string,
   size: { width?: number; height?: number } | undefined,
   format: string,
 ): Promise<string> {
   const path = await getPath()
-  const baseName = path.basename(filePath, path.extname(filePath))
+  const relativePath = normalizeRelativeStoragePath(filePath, path)
+  const baseName = path.basename(relativePath, path.extname(relativePath))
   const sizeStr = size ? `_${size.width}x${size.height}` : ''
   const formatStr = format ? `.${format}` : ''
 
   return `${baseName}${sizeStr}${formatStr}`
 }
 
-// Get cache directory for a specific file (includes original filename with extension)
-export async function getCacheDirForFile(filePath: string): Promise<string> {
+/**
+ * Absolute cache directory for a source file (does not create it).
+ * Mirrors the full relative storage path under the cache root so that e.g.
+ * `images/a/aufnahme4.jpg` and `images/b/aufnahme4.jpg` get separate dirs.
+ */
+export async function resolveCacheDirForFile(
+  filePath: string,
+): Promise<string> {
   const path = await getPath()
-  const fs = await getFs()
   const cacheDir = await getCachePath()
-  const fileName = path.basename(filePath) // Includes extension
-  const decodedFileName = decodeURIComponent(fileName)
+  const relativePath = normalizeRelativeStoragePath(filePath, path)
+  const fileCacheDir = path.resolve(cacheDir, relativePath)
 
-  const fileCacheDir = path.join(cacheDir, decodedFileName)
+  // Security: keep resolved cache path inside the cache root
+  const resolvedCacheRoot = path.resolve(cacheDir)
+  if (
+    fileCacheDir !== resolvedCacheRoot &&
+    !fileCacheDir.startsWith(resolvedCacheRoot + path.sep)
+  ) {
+    throw new Error('Invalid file path')
+  }
 
-  // Ensure cache directory exists
+  return fileCacheDir
+}
+
+/**
+ * Cache directory for a specific source file (creates it if missing).
+ */
+export async function getCacheDirForFile(filePath: string): Promise<string> {
+  const fs = await getFs()
+  const fileCacheDir = await resolveCacheDirForFile(filePath)
+
   if (!fs.existsSync(fileCacheDir)) {
     fs.mkdirSync(fileCacheDir, { recursive: true })
   }
@@ -149,6 +187,31 @@ export async function getCacheFilePath(
   const path = await getPath()
   const fileCacheDir = await getCacheDirForFile(filePath)
   return path.join(fileCacheDir, cacheKey)
+}
+
+/** Remove all cached transforms for a source file (best-effort). */
+export async function clearCacheForFile(filePath: string): Promise<boolean> {
+  const fs = await getFs()
+  try {
+    const cacheDir = await resolveCacheDirForFile(filePath)
+    if (fs.existsSync(cacheDir)) {
+      fs.rmSync(cacheDir, { recursive: true, force: true })
+      return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+/** Stable ETag including path and transform params (not just the path). */
+export function buildFileETag(
+  filePath: string,
+  sizeParam?: string,
+  formatParam?: string,
+): string {
+  const payload = `${filePath}|size=${sizeParam ?? ''}|format=${formatParam ?? ''}`
+  return `"${Buffer.from(payload).toString('base64')}"`
 }
 
 // Check if format is supported for image conversion
@@ -384,14 +447,11 @@ export const getAllFiles = createServerFn().handler(
 // Count cache files for a given image path
 async function countCacheFiles(
   imagePath: string,
-  cacheDir: string,
+  _cacheDir: string,
 ): Promise<number> {
   try {
-    const path = await getPath()
     const fs = await getFs()
-    // Get the cache directory for this specific file
-    const fileName = path.basename(imagePath) // Includes extension
-    const fileCacheDir = path.join(cacheDir, fileName)
+    const fileCacheDir = await resolveCacheDirForFile(imagePath)
 
     if (!fs.existsSync(fileCacheDir)) {
       return 0
@@ -423,13 +483,10 @@ export const getCachedVersions = createServerFn()
         url: string
       }>
     > => {
-      const path = await getPath()
       const fs = await getFs()
       const { imagePath } = ctx.data
 
-      const cacheDir = await getCachePath()
-      const fileName = path.basename(imagePath) // Includes extension
-      const fileCacheDir = path.join(cacheDir, fileName)
+      const fileCacheDir = await resolveCacheDirForFile(imagePath)
       const versions: Array<{
         fileName: string
         size?: string
@@ -589,6 +646,9 @@ export async function uploadFile(
     // Write the file
     fs.writeFileSync(fullPath, fileBuffer)
 
+    // Drop stale transforms if this path is being overwritten
+    await clearCacheForFile(normalizedPath)
+
     return { success: true, path: normalizedPath }
   } catch (error) {
     console.error('Error uploading file:', error)
@@ -628,14 +688,7 @@ export async function deleteFile(
     fs.unlinkSync(fullPath)
 
     // Best-effort: remove cache directory for this file, if present
-    try {
-      const cacheDir = await getCacheDirForFile(normalizedPath)
-      if (fs.existsSync(cacheDir)) {
-        fs.rmSync(cacheDir, { recursive: true, force: true })
-      }
-    } catch {
-      // ignore cache cleanup errors
-    }
+    await clearCacheForFile(normalizedPath)
 
     return { success: true, path: normalizedPath, deletedCache: true }
   } catch (error) {

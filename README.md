@@ -99,6 +99,8 @@ GET /files/images/test.jpg?size=180x240&format=webp
 
 **Note:** Transformation parameters (`size` and `format`) are only available for image files. The transformed images are cached automatically and will be reused on subsequent requests.
 
+Cached transforms are stored under `{FILE_CACHE_PATH}/{full/relative/path/to/file.jpg}/…`, so two files that share the same basename in different folders do **not** share a cache entry. After upgrading from older Cabby versions that keyed cache by basename only, delete the old cache directory once (or let new keys miss and regenerate) so stale wrong derivatives are not left on disk.
+
 ### Upload a File
 
 Upload a new file to storage:
