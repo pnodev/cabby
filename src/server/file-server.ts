@@ -204,13 +204,47 @@ export async function clearCacheForFile(filePath: string): Promise<boolean> {
   }
 }
 
-/** Stable ETag including path and transform params (not just the path). */
+/**
+ * Source content revision for cache identity (mtime ms).
+ * Changes when the file is overwritten so ETags/URLs can bust stale caches.
+ */
+export async function getSourceRevision(filePath: string): Promise<string> {
+  const path = await getPath()
+  const fs = await getFs()
+  const storagePath = getStoragePath()
+  const relativePath = normalizeRelativeStoragePath(filePath, path)
+  const fullPath = path.resolve(storagePath, relativePath)
+  const resolvedStoragePath = path.resolve(storagePath)
+
+  if (
+    fullPath !== resolvedStoragePath &&
+    !fullPath.startsWith(resolvedStoragePath + path.sep)
+  ) {
+    throw new Error('File not found')
+  }
+  if (!fs.existsSync(fullPath)) {
+    throw new Error('File not found')
+  }
+
+  return String(fs.statSync(fullPath).mtimeMs)
+}
+
+/** Cache-Control: only mark versioned URLs (with `v`) as immutable. */
+export function buildFileCacheControl(sourceRevisionInUrl?: string): string {
+  if (sourceRevisionInUrl) {
+    return 'public, max-age=31536000, immutable'
+  }
+  return 'public, max-age=31536000'
+}
+
+/** Stable ETag including path, transform params, and source revision. */
 export function buildFileETag(
   filePath: string,
   sizeParam?: string,
   formatParam?: string,
+  revision?: string,
 ): string {
-  const payload = `${filePath}|size=${sizeParam ?? ''}|format=${formatParam ?? ''}`
+  const payload = `${filePath}|size=${sizeParam ?? ''}|format=${formatParam ?? ''}|rev=${revision ?? ''}`
   return `"${Buffer.from(payload).toString('base64')}"`
 }
 
@@ -229,54 +263,64 @@ const TransformImageInputSchema = z.object({
   format: z.string(),
 })
 
+/** Transform an image on disk (plain helper; usable outside Start runtime). */
+export async function transformImageToFile(options: {
+  inputPath: string
+  outputPath: string
+  format: string
+  size?: { width?: number; height?: number }
+}): Promise<void> {
+  const { inputPath, outputPath, format, size } = options
+  const path = await getPath()
+  const fs = await getFs()
+
+  if (!isSupportedImageFormat(format)) {
+    throw new Error(
+      `Unsupported image format: ${format}. Supported formats: webp, png, jpg, jpeg`,
+    )
+  }
+
+  // Ensure output directory exists
+  const outputDir = path.dirname(outputPath)
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true })
+  }
+
+  // Dynamically import sharp (server-side only)
+  const sharp = await getSharp()
+
+  let pipeline = sharp(inputPath)
+
+  // Resize if size is specified
+  if (size) {
+    pipeline = pipeline.resize(size.width, size.height, {
+      fit: 'cover', // Cover the entire area, may crop
+      position: 'center',
+    })
+  }
+
+  // Convert format
+  switch (format.toLowerCase()) {
+    case 'webp':
+      await pipeline.webp({ quality: 85 }).toFile(outputPath)
+      break
+    case 'png':
+      await pipeline.png({ quality: 85 }).toFile(outputPath)
+      break
+    case 'jpg':
+    case 'jpeg':
+      await pipeline.jpeg({ quality: 85 }).toFile(outputPath)
+      break
+    default:
+      // Fallback: try to use format directly
+      await pipeline.toFormat(format as any).toFile(outputPath)
+  }
+}
+
 export const transformImage = createServerFn()
   .inputValidator(TransformImageInputSchema)
   .handler(async (ctx): Promise<void> => {
-    const { inputPath, outputPath, format, size } = ctx.data
-    const path = await getPath()
-    const fs = await getFs()
-
-    if (!isSupportedImageFormat(format)) {
-      throw new Error(
-        `Unsupported image format: ${format}. Supported formats: webp, png, jpg, jpeg`,
-      )
-    }
-
-    // Ensure output directory exists
-    const outputDir = path.dirname(outputPath)
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true })
-    }
-
-    // Dynamically import sharp (server-side only)
-    const sharp = await getSharp()
-
-    let pipeline = sharp(inputPath)
-
-    // Resize if size is specified
-    if (size) {
-      pipeline = pipeline.resize(size.width, size.height, {
-        fit: 'cover', // Cover the entire area, may crop
-        position: 'center',
-      })
-    }
-
-    // Convert format
-    switch (format.toLowerCase()) {
-      case 'webp':
-        await pipeline.webp({ quality: 85 }).toFile(outputPath)
-        break
-      case 'png':
-        await pipeline.png({ quality: 85 }).toFile(outputPath)
-        break
-      case 'jpg':
-      case 'jpeg':
-        await pipeline.jpeg({ quality: 85 }).toFile(outputPath)
-        break
-      default:
-        // Fallback: try to use format directly
-        await pipeline.toFormat(format as any).toFile(outputPath)
-    }
+    await transformImageToFile(ctx.data)
   })
 
 const GetFileInputSchema = z.object({
@@ -285,72 +329,75 @@ const GetFileInputSchema = z.object({
   formatParam: z.string().optional(),
 })
 
+/** Read a stored file, optionally transforming (plain helper for tests/routes). */
+export async function readStoredFile(options: {
+  filePath: string
+  sizeParam?: string
+  formatParam?: string
+}): Promise<{ buffer: Buffer; contentType: string; cacheKey?: string }> {
+  const { filePath, sizeParam, formatParam } = options
+  const path = await getPath()
+  const fs = await getFs()
+  const storagePath = getStoragePath()
+
+  // Decode URL-encoded path (e.g., %20 -> space)
+  const decodedPath = decodeURIComponent(filePath)
+
+  // Normalize and resolve the file path to prevent directory traversal
+  const normalizedPath = path
+    .normalize(decodedPath)
+    .replace(/^(\.\.(\/|\\|$))+/, '')
+  const fullPath = path.resolve(storagePath, normalizedPath)
+  const resolvedStoragePath = path.resolve(storagePath)
+
+  // Security check: ensure the resolved path is within the storage directory
+  if (!fullPath.startsWith(resolvedStoragePath)) {
+    throw new Error('File not found')
+  }
+
+  // Check if original file exists
+  if (!fs.existsSync(fullPath)) {
+    throw new Error('File not found')
+  }
+
+  const isImage = await checkIsImageFile(decodedPath)
+  // If it's an image and we have transformation parameters, process it
+  if (isImage && (sizeParam || formatParam)) {
+    const size = parseSize(sizeParam)
+    const format = await getOutputFormat(formatParam, decodedPath)
+    const cacheKey = await generateCacheKey(decodedPath, size, format)
+    const cacheFilePath = await getCacheFilePath(decodedPath, cacheKey)
+
+    // Check if cached version exists
+    if (fs.existsSync(cacheFilePath)) {
+      const buffer = fs.readFileSync(cacheFilePath)
+      const contentType = getContentType(format)
+      return { buffer, contentType, cacheKey }
+    }
+
+    // Generate transformed version
+    await transformImageToFile({
+      inputPath: fullPath,
+      outputPath: cacheFilePath,
+      size,
+      format,
+    })
+    const buffer = fs.readFileSync(cacheFilePath)
+    const contentType = getContentType(format)
+    return { buffer, contentType, cacheKey }
+  }
+
+  // Return original file
+  const buffer = fs.readFileSync(fullPath)
+  const contentType = getContentType(path.extname(filePath))
+  return { buffer, contentType }
+}
+
 export const getFile = createServerFn()
   .inputValidator(GetFileInputSchema)
-  .handler(
-    async (
-      ctx,
-    ): Promise<{ buffer: Buffer; contentType: string; cacheKey?: string }> => {
-      const { filePath, sizeParam, formatParam } = ctx.data
-      const path = await getPath()
-      const fs = await getFs()
-      const storagePath = getStoragePath()
-
-      // Decode URL-encoded path (e.g., %20 -> space)
-      const decodedPath = decodeURIComponent(filePath)
-
-      // Normalize and resolve the file path to prevent directory traversal
-      const normalizedPath = path
-        .normalize(decodedPath)
-        .replace(/^(\.\.(\/|\\|$))+/, '')
-      const fullPath = path.resolve(storagePath, normalizedPath)
-      const resolvedStoragePath = path.resolve(storagePath)
-
-      // Security check: ensure the resolved path is within the storage directory
-      if (!fullPath.startsWith(resolvedStoragePath)) {
-        throw new Error('File not found')
-      }
-
-      // Check if original file exists
-      if (!fs.existsSync(fullPath)) {
-        throw new Error('File not found')
-      }
-
-      const isImage = await checkIsImageFile(decodedPath)
-      // If it's an image and we have transformation parameters, process it
-      if (isImage && (sizeParam || formatParam)) {
-        const size = parseSize(sizeParam)
-        const format = await getOutputFormat(formatParam, decodedPath)
-        const cacheKey = await generateCacheKey(decodedPath, size, format)
-        const cacheFilePath = await getCacheFilePath(decodedPath, cacheKey)
-
-        // Check if cached version exists
-        if (fs.existsSync(cacheFilePath)) {
-          const buffer = fs.readFileSync(cacheFilePath)
-          const contentType = getContentType(format)
-          return { buffer, contentType, cacheKey }
-        }
-
-        // Generate transformed version
-        await transformImage({
-          data: {
-            inputPath: fullPath,
-            outputPath: cacheFilePath,
-            size,
-            format,
-          },
-        })
-        const buffer = fs.readFileSync(cacheFilePath)
-        const contentType = getContentType(format)
-        return { buffer, contentType, cacheKey }
-      }
-
-      // Return original file
-      const buffer = fs.readFileSync(fullPath)
-      const contentType = getContentType(path.extname(filePath))
-      return { buffer, contentType }
-    },
-  )
+  .handler(async (ctx) => {
+    return readStoredFile(ctx.data)
+  })
 
 // Get content type from file extension or format
 export function getContentType(formatOrExt: string): string {
@@ -618,7 +665,7 @@ export const getCachedVersions = createServerFn()
 export async function uploadFile(
   filePath: string,
   fileBuffer: Buffer,
-): Promise<{ success: boolean; path: string; error?: string }> {
+): Promise<{ success: boolean; path: string; error?: string; revision?: string }> {
   try {
     const path = await getPath()
     const fs = await getFs()
@@ -649,7 +696,8 @@ export async function uploadFile(
     // Drop stale transforms if this path is being overwritten
     await clearCacheForFile(normalizedPath)
 
-    return { success: true, path: normalizedPath }
+    const revision = String(fs.statSync(fullPath).mtimeMs)
+    return { success: true, path: normalizedPath, revision }
   } catch (error) {
     console.error('Error uploading file:', error)
     return {
@@ -688,9 +736,9 @@ export async function deleteFile(
     fs.unlinkSync(fullPath)
 
     // Best-effort: remove cache directory for this file, if present
-    await clearCacheForFile(normalizedPath)
+    const deletedCache = await clearCacheForFile(normalizedPath)
 
-    return { success: true, path: normalizedPath, deletedCache: true }
+    return { success: true, path: normalizedPath, deletedCache }
   } catch (error) {
     console.error('Error deleting file:', error)
     return {

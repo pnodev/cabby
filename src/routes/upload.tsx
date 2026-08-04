@@ -57,11 +57,15 @@ export const Route = createFileRoute('/upload')({
               .split('/')
               .map((segment) => encodeURIComponent(segment))
               .join('/')
-            const url = new URL(`/files/${encodedPath}`, origin).href
+            const url = new URL(`/files/${encodedPath}`, origin)
+            if (result.revision) {
+              url.searchParams.set('v', result.revision)
+            }
             return json({
               success: true,
               path: result.path,
-              url,
+              url: url.href,
+              revision: result.revision,
               mimeType: file.type || 'application/octet-stream',
               size: file.size,
             })

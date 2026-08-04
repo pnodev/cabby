@@ -81,6 +81,7 @@ GET /files/{pathToFile}?size={width}x{height}&format={format}
 
 - `size` (optional) - Resize the image to the specified dimensions (e.g., `180x240`)
 - `format` (optional) - Convert the image to a different format. Supported output formats: `webp`, `avif`, `png`, `jpg`, `jpeg`
+- Other query params (e.g. `v` for client cache-busting) are ignored
 
 **Note:** The server can read images in formats: `jpg`, `jpeg`, `png`, `gif`, `webp`, `avif`, `tiff`, `bmp`, `svg`. However, conversion is only supported to: `webp`, `avif`, `png`, `jpg`, `jpeg`.
 
@@ -99,7 +100,7 @@ GET /files/images/test.jpg?size=180x240&format=webp
 
 **Note:** Transformation parameters (`size` and `format`) are only available for image files. The transformed images are cached automatically and will be reused on subsequent requests.
 
-Cached transforms are stored under `{FILE_CACHE_PATH}/{full/relative/path/to/file.jpg}/…`, so two files that share the same basename in different folders do **not** share a cache entry. After upgrading from older Cabby versions that keyed cache by basename only, delete the old cache directory once (or let new keys miss and regenerate) so stale wrong derivatives are not left on disk.
+Cached transforms are stored under `{FILE_CACHE_PATH}/{full/relative/path/to/file.jpg}/…`, so two files that share the same basename in different folders do **not** share a cache entry. After upgrading from older Cabby versions that keyed cache by basename only, new cache keys bypass those legacy basename-keyed entries, but regeneration does **not** remove them. Old derivatives remain on disk until an operator explicitly deletes the old cache directory (or those leftover files).
 
 ### Upload a File
 
