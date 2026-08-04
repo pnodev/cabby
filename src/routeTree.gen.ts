@@ -9,29 +9,29 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as UploadRouteImport } from './routes/upload'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as FilesSplatRouteImport } from './routes/files.$'
+import { Route as UploadRouteImport } from './routes/upload'
 import { Route as FileSplatRouteImport } from './routes/file.$'
+import { Route as FilesSplatRouteImport } from './routes/files.$'
 
-const UploadRoute = UploadRouteImport.update({
-  id: '/upload',
-  path: '/upload',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FilesSplatRoute = FilesSplatRouteImport.update({
-  id: '/files/$',
-  path: '/files/$',
+const UploadRoute = UploadRouteImport.update({
+  id: '/upload',
+  path: '/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FileSplatRoute = FileSplatRouteImport.update({
   id: '/file/$',
   path: '/file/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FilesSplatRoute = FilesSplatRouteImport.update({
+  id: '/files/$',
+  path: '/files/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -71,13 +71,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/upload': {
-      id: '/upload'
-      path: '/upload'
-      fullPath: '/upload'
-      preLoaderRoute: typeof UploadRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -85,11 +78,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/files/$': {
-      id: '/files/$'
-      path: '/files/$'
-      fullPath: '/files/$'
-      preLoaderRoute: typeof FilesSplatRouteImport
+    '/upload': {
+      id: '/upload'
+      path: '/upload'
+      fullPath: '/upload'
+      preLoaderRoute: typeof UploadRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/file/$': {
@@ -97,6 +90,13 @@ declare module '@tanstack/react-router' {
       path: '/file/$'
       fullPath: '/file/$'
       preLoaderRoute: typeof FileSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/files/$': {
+      id: '/files/$'
+      path: '/files/$'
+      fullPath: '/files/$'
+      preLoaderRoute: typeof FilesSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

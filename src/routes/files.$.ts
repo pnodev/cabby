@@ -15,7 +15,13 @@ export const Route = createFileRoute('/files/$')({
       GET: async ({ request }) => {
         try {
           // Dynamic import to ensure this only runs server-side
-          const { getFile, isImageFile } = await import('#/server/file-server')
+          const {
+            getFile,
+            isImageFile,
+            buildFileETag,
+            buildFileCacheControl,
+            getSourceRevision,
+          } = await import('#/server/file-server')
 
           // Parse the URL to get the file path
           const url = new URL(request.url)
@@ -33,6 +39,7 @@ export const Route = createFileRoute('/files/$')({
           // Parse query parameters
           const sizeParam = url.searchParams.get('size') || undefined
           const formatParam = url.searchParams.get('format') || undefined
+          const sourceRevisionInUrl = url.searchParams.get('v') || undefined
 
           // Check if FILE_STORAGE_PATH is set
           const storagePath = process.env.FILE_STORAGE_PATH
@@ -64,11 +71,13 @@ export const Route = createFileRoute('/files/$')({
             data: { filePath: path, sizeParam, formatParam },
           })
 
-          // Set long-running cache headers (1 year)
+          const revision = await getSourceRevision(path)
+
+          // Long-lived cache; immutable only when the URL is versioned with `v`.
           const headers = withCorsHeaders(request, {
             'Content-Type': contentType,
-            'Cache-Control': 'public, max-age=31536000, immutable',
-            ETag: `"${Buffer.from(path).toString('base64')}"`,
+            'Cache-Control': buildFileCacheControl(sourceRevisionInUrl),
+            ETag: buildFileETag(path, sizeParam, formatParam, revision),
           })
 
           return new Response(new Uint8Array(buffer), {
