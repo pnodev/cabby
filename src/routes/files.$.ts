@@ -21,6 +21,7 @@ export const Route = createFileRoute('/files/$')({
             buildFileETag,
             buildFileCacheControl,
             getSourceRevision,
+            matchesIfNoneMatch,
           } = await import('#/server/file-server')
 
           // Parse the URL to get the file path
@@ -66,18 +67,33 @@ export const Route = createFileRoute('/files/$')({
             )
           }
 
+          const revision = await getSourceRevision(path)
+          const etag = buildFileETag(path, sizeParam, formatParam, revision)
+          const cacheControl = buildFileCacheControl(sourceRevisionInUrl)
+
+          // Avoid reading/transforming when the client already has this revision.
+          if (
+            matchesIfNoneMatch(etag, request.headers.get('If-None-Match'))
+          ) {
+            return new Response(null, {
+              status: 304,
+              headers: withCorsHeaders(request, {
+                ETag: etag,
+                'Cache-Control': cacheControl,
+              }),
+            })
+          }
+
           // Get the file (with optional transformations)
           const { buffer, contentType } = await getFile({
             data: { filePath: path, sizeParam, formatParam },
           })
 
-          const revision = await getSourceRevision(path)
-
           // Long-lived cache; immutable only when the URL is versioned with `v`.
           const headers = withCorsHeaders(request, {
             'Content-Type': contentType,
-            'Cache-Control': buildFileCacheControl(sourceRevisionInUrl),
-            ETag: buildFileETag(path, sizeParam, formatParam, revision),
+            'Cache-Control': cacheControl,
+            ETag: etag,
           })
 
           return new Response(new Uint8Array(buffer), {

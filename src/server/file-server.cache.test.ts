@@ -6,6 +6,7 @@ import {
   buildFileCacheControl,
   buildFileETag,
   getSourceRevision,
+  matchesIfNoneMatch,
   normalizeRelativeStoragePath,
   readStoredFile,
   uploadFile,
@@ -61,6 +62,29 @@ describe('buildFileCacheControl', () => {
     )
     expect(buildFileCacheControl()).toBe('public, max-age=31536000')
     expect(buildFileCacheControl(undefined)).toBe('public, max-age=31536000')
+  })
+})
+
+describe('matchesIfNoneMatch', () => {
+  const etag = buildFileETag('images/a.jpg', '10x10', 'webp', '100')
+
+  it('returns false without a header', () => {
+    expect(matchesIfNoneMatch(etag, null)).toBe(false)
+    expect(matchesIfNoneMatch(etag, '')).toBe(false)
+  })
+
+  it('matches a strong ETag', () => {
+    expect(matchesIfNoneMatch(etag, etag)).toBe(true)
+  })
+
+  it('matches a weak ETag and list members', () => {
+    expect(matchesIfNoneMatch(etag, `W/${etag}`)).toBe(true)
+    expect(matchesIfNoneMatch(etag, `"other", ${etag}`)).toBe(true)
+  })
+
+  it('matches * and rejects other tags', () => {
+    expect(matchesIfNoneMatch(etag, '*')).toBe(true)
+    expect(matchesIfNoneMatch(etag, '"nope"')).toBe(false)
   })
 })
 

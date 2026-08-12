@@ -248,6 +248,26 @@ export function buildFileETag(
   return `"${Buffer.from(payload).toString('base64')}"`
 }
 
+/**
+ * RFC 9110 If-None-Match (weak comparison): true when the client already has
+ * this representation and the server may answer 304.
+ */
+export function matchesIfNoneMatch(
+  etag: string,
+  ifNoneMatch: string | null,
+): boolean {
+  if (!ifNoneMatch) return false
+
+  const header = ifNoneMatch.trim()
+  if (!header) return false
+  if (header === '*') return true
+
+  const normalize = (value: string) => value.trim().replace(/^W\//i, '')
+  const target = normalize(etag)
+
+  return header.split(',').some((part) => normalize(part) === target)
+}
+
 // Check if format is supported for image conversion
 export function isSupportedImageFormat(format: string): boolean {
   const supportedFormats = ['webp', 'avif', 'png', 'jpg', 'jpeg']
