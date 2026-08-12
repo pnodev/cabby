@@ -18,6 +18,10 @@ services:
       FILE_STORAGE_PATH: /var/lib/cabby/files
       FILE_CACHE_PATH: /var/lib/cabby/cache
 
+      # Optional: shown as X-Cabby-Version on file responses (deploy verification).
+      # CABBY_VERSION: 0.1.0
+      # CABBY_GIT_SHA: abcdef012345
+
       # Reserved for future use
       # DB_URL: postgres://user:pass@db:5432/cabby
       # REDIS_URL: redis://redis:6379

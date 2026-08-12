@@ -1,3 +1,5 @@
+import { getCabbyVersionHeaders } from '#/server/version'
+
 const CORS_METHODS = 'GET, HEAD, OPTIONS'
 
 function parseAllowedOrigins(): string[] | null {
@@ -53,6 +55,7 @@ export function getCorsPreflightHeaders(request: Request): Record<string, string
 
   return {
     ...corsHeaders,
+    ...getCabbyVersionHeaders(),
     'Access-Control-Allow-Methods': CORS_METHODS,
     'Access-Control-Max-Age': '86400',
   }
@@ -64,6 +67,9 @@ export function withCorsHeaders(
 ): Headers {
   const merged = new Headers(headers)
   for (const [key, value] of Object.entries(getCorsHeaders(request))) {
+    merged.set(key, value)
+  }
+  for (const [key, value] of Object.entries(getCabbyVersionHeaders())) {
     merged.set(key, value)
   }
   return merged
