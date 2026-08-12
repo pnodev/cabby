@@ -21,6 +21,7 @@ export const Route = createFileRoute('/files/$')({
             buildFileETag,
             buildFileCacheControl,
             getSourceRevision,
+            matchesIfNoneMatch,
           } = await import('#/server/file-server')
 
           // Parse the URL to get the file path
@@ -66,18 +67,41 @@ export const Route = createFileRoute('/files/$')({
             )
           }
 
-          // Get the file (with optional transformations)
-          const { buffer, contentType } = await getFile({
+          const cacheControl = buildFileCacheControl(sourceRevisionInUrl)
+          const ifNoneMatch = request.headers.get('If-None-Match')
+
+          // Cheap 304 path: only skip the body when the revision is stable.
+          const revisionHint = await getSourceRevision(path)
+          const etagHint = buildFileETag(
+            path,
+            sizeParam,
+            formatParam,
+            revisionHint,
+          )
+          if (matchesIfNoneMatch(etagHint, ifNoneMatch)) {
+            const revisionNow = await getSourceRevision(path)
+            if (revisionNow === revisionHint) {
+              return new Response(null, {
+                status: 304,
+                headers: withCorsHeaders(request, {
+                  ETag: etagHint,
+                  'Cache-Control': cacheControl,
+                }),
+              })
+            }
+          }
+
+          // ETag must describe the same source snapshot as the returned bytes.
+          const { buffer, contentType, revision } = await getFile({
             data: { filePath: path, sizeParam, formatParam },
           })
-
-          const revision = await getSourceRevision(path)
+          const etag = buildFileETag(path, sizeParam, formatParam, revision)
 
           // Long-lived cache; immutable only when the URL is versioned with `v`.
           const headers = withCorsHeaders(request, {
             'Content-Type': contentType,
-            'Cache-Control': buildFileCacheControl(sourceRevisionInUrl),
-            ETag: buildFileETag(path, sizeParam, formatParam, revision),
+            'Cache-Control': cacheControl,
+            ETag: etag,
           })
 
           return new Response(new Uint8Array(buffer), {
