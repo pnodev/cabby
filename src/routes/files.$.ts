@@ -67,27 +67,35 @@ export const Route = createFileRoute('/files/$')({
             )
           }
 
-          const revision = await getSourceRevision(path)
-          const etag = buildFileETag(path, sizeParam, formatParam, revision)
           const cacheControl = buildFileCacheControl(sourceRevisionInUrl)
+          const ifNoneMatch = request.headers.get('If-None-Match')
 
-          // Avoid reading/transforming when the client already has this revision.
-          if (
-            matchesIfNoneMatch(etag, request.headers.get('If-None-Match'))
-          ) {
-            return new Response(null, {
-              status: 304,
-              headers: withCorsHeaders(request, {
-                ETag: etag,
-                'Cache-Control': cacheControl,
-              }),
-            })
+          // Cheap 304 path: only skip the body when the revision is stable.
+          const revisionHint = await getSourceRevision(path)
+          const etagHint = buildFileETag(
+            path,
+            sizeParam,
+            formatParam,
+            revisionHint,
+          )
+          if (matchesIfNoneMatch(etagHint, ifNoneMatch)) {
+            const revisionNow = await getSourceRevision(path)
+            if (revisionNow === revisionHint) {
+              return new Response(null, {
+                status: 304,
+                headers: withCorsHeaders(request, {
+                  ETag: etagHint,
+                  'Cache-Control': cacheControl,
+                }),
+              })
+            }
           }
 
-          // Get the file (with optional transformations)
-          const { buffer, contentType } = await getFile({
+          // ETag must describe the same source snapshot as the returned bytes.
+          const { buffer, contentType, revision } = await getFile({
             data: { filePath: path, sizeParam, formatParam },
           })
+          const etag = buildFileETag(path, sizeParam, formatParam, revision)
 
           // Long-lived cache; immutable only when the URL is versioned with `v`.
           const headers = withCorsHeaders(request, {

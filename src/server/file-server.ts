@@ -349,13 +349,28 @@ const GetFileInputSchema = z.object({
   formatParam: z.string().optional(),
 })
 
+const READ_STORED_FILE_MAX_ATTEMPTS = 3
+
 /** Read a stored file, optionally transforming (plain helper for tests/routes). */
 export async function readStoredFile(options: {
   filePath: string
   sizeParam?: string
   formatParam?: string
-}): Promise<{ buffer: Buffer; contentType: string; cacheKey?: string }> {
-  const { filePath, sizeParam, formatParam } = options
+  /**
+   * Test-only hook: runs after the source revision is captured and before bytes
+   * are read/transformed, so races can be simulated deterministically.
+   */
+  afterSourceRevision?: (ctx: {
+    revision: string
+    fullPath: string
+  }) => void | Promise<void>
+}): Promise<{
+  buffer: Buffer
+  contentType: string
+  revision: string
+  cacheKey?: string
+}> {
+  const { filePath, sizeParam, formatParam, afterSourceRevision } = options
   const path = await getPath()
   const fs = await getFs()
   const storagePath = getStoragePath()
@@ -371,46 +386,67 @@ export async function readStoredFile(options: {
   const resolvedStoragePath = path.resolve(storagePath)
 
   // Security check: ensure the resolved path is within the storage directory
-  if (!fullPath.startsWith(resolvedStoragePath)) {
-    throw new Error('File not found')
-  }
-
-  // Check if original file exists
-  if (!fs.existsSync(fullPath)) {
+  if (
+    fullPath !== resolvedStoragePath &&
+    !fullPath.startsWith(resolvedStoragePath + path.sep)
+  ) {
     throw new Error('File not found')
   }
 
   const isImage = await checkIsImageFile(decodedPath)
-  // If it's an image and we have transformation parameters, process it
-  if (isImage && (sizeParam || formatParam)) {
-    const size = parseSize(sizeParam)
-    const format = await getOutputFormat(formatParam, decodedPath)
-    const cacheKey = await generateCacheKey(decodedPath, size, format)
-    const cacheFilePath = await getCacheFilePath(decodedPath, cacheKey)
+  const wantsTransform = isImage && Boolean(sizeParam || formatParam)
 
-    // Check if cached version exists
-    if (fs.existsSync(cacheFilePath)) {
-      const buffer = fs.readFileSync(cacheFilePath)
-      const contentType = getContentType(format)
-      return { buffer, contentType, cacheKey }
+  for (let attempt = 0; attempt < READ_STORED_FILE_MAX_ATTEMPTS; attempt++) {
+    if (!fs.existsSync(fullPath)) {
+      throw new Error('File not found')
     }
 
-    // Generate transformed version
-    await transformImageToFile({
-      inputPath: fullPath,
-      outputPath: cacheFilePath,
-      size,
-      format,
-    })
-    const buffer = fs.readFileSync(cacheFilePath)
-    const contentType = getContentType(format)
-    return { buffer, contentType, cacheKey }
+    const revision = String(fs.statSync(fullPath).mtimeMs)
+    if (afterSourceRevision) {
+      await afterSourceRevision({ revision, fullPath })
+    }
+
+    let buffer: Buffer
+    let contentType: string
+    let cacheKey: string | undefined
+
+    if (wantsTransform) {
+      const size = parseSize(sizeParam)
+      const format = await getOutputFormat(formatParam, decodedPath)
+      cacheKey = await generateCacheKey(decodedPath, size, format)
+      const cacheFilePath = await getCacheFilePath(decodedPath, cacheKey)
+
+      if (fs.existsSync(cacheFilePath)) {
+        buffer = fs.readFileSync(cacheFilePath)
+      } else {
+        await transformImageToFile({
+          inputPath: fullPath,
+          outputPath: cacheFilePath,
+          size,
+          format,
+        })
+        buffer = fs.readFileSync(cacheFilePath)
+      }
+      contentType = getContentType(format)
+    } else {
+      buffer = fs.readFileSync(fullPath)
+      contentType = getContentType(path.extname(filePath))
+    }
+
+    // Same source snapshot as the bytes we are about to return?
+    if (!fs.existsSync(fullPath)) {
+      throw new Error('File not found')
+    }
+    const revisionAfter = String(fs.statSync(fullPath).mtimeMs)
+    if (revisionAfter === revision) {
+      return { buffer, contentType, revision, cacheKey }
+    }
+
+    // Source changed mid-read; drop possibly-stale transforms and retry.
+    await clearCacheForFile(normalizedPath)
   }
 
-  // Return original file
-  const buffer = fs.readFileSync(fullPath)
-  const contentType = getContentType(path.extname(filePath))
-  return { buffer, contentType }
+  throw new Error('File changed while reading')
 }
 
 export const getFile = createServerFn()

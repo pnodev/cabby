@@ -104,13 +104,17 @@ describe('source overwrite invalidates transformed bytes', () => {
     fs.rmSync(cacheDir, { recursive: true, force: true })
   })
 
-  it('serves new transformed bytes after the same public path is overwritten', async () => {
+  async function withTempStorage() {
     prevStorage = process.env.FILE_STORAGE_PATH
     prevCache = process.env.FILE_CACHE_PATH
     storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cabby-storage-'))
     cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cabby-cache-'))
     process.env.FILE_STORAGE_PATH = storageDir
     process.env.FILE_CACHE_PATH = cacheDir
+  }
+
+  it('serves new transformed bytes after the same public path is overwritten', async () => {
+    await withTempStorage()
 
     const sharp = (await import('sharp')).default
     const filePath = 'images/overwrite.jpg'
@@ -163,8 +167,71 @@ describe('source overwrite invalidates transformed bytes', () => {
 
     expect(secondRevision).not.toBe(firstRevision)
     expect(second.buffer.equals(first.buffer)).toBe(false)
+    expect(second.revision).toBe(secondRevision)
     expect(
-      buildFileETag(filePath, '20x20', 'webp', secondRevision),
-    ).not.toBe(buildFileETag(filePath, '20x20', 'webp', firstRevision))
+      buildFileETag(filePath, '20x20', 'webp', second.revision),
+    ).not.toBe(buildFileETag(filePath, '20x20', 'webp', first.revision))
+  })
+
+  it('keeps response bytes and ETag revision consistent across mid-read overwrite', async () => {
+    await withTempStorage()
+
+    const sharp = (await import('sharp')).default
+    const filePath = 'images/race.jpg'
+    const red = await sharp({
+      create: {
+        width: 40,
+        height: 40,
+        channels: 3,
+        background: { r: 255, g: 0, b: 0 },
+      },
+    })
+      .jpeg()
+      .toBuffer()
+    const blue = await sharp({
+      create: {
+        width: 40,
+        height: 40,
+        channels: 3,
+        background: { r: 0, g: 0, b: 255 },
+      },
+    })
+      .jpeg()
+      .toBuffer()
+
+    const firstUpload = await uploadFile(filePath, red)
+    expect(firstUpload.success).toBe(true)
+
+    let overwrote = false
+    const raced = await readStoredFile({
+      filePath,
+      sizeParam: '20x20',
+      formatParam: 'webp',
+      afterSourceRevision: async ({ revision }) => {
+        if (overwrote) return
+        overwrote = true
+        expect(revision).toBe(firstUpload.revision)
+        // Simulate an overwrite between metadata lookup and byte retrieval.
+        await new Promise((r) => setTimeout(r, 20))
+        const secondUpload = await uploadFile(filePath, blue)
+        expect(secondUpload.success).toBe(true)
+        expect(secondUpload.revision).not.toBe(firstUpload.revision)
+      },
+    })
+
+    expect(overwrote).toBe(true)
+    expect(raced.revision).toBe(await getSourceRevision(filePath))
+    expect(raced.revision).not.toBe(firstUpload.revision)
+
+    const steady = await readStoredFile({
+      filePath,
+      sizeParam: '20x20',
+      formatParam: 'webp',
+    })
+    expect(raced.revision).toBe(steady.revision)
+    expect(raced.buffer.equals(steady.buffer)).toBe(true)
+    expect(
+      buildFileETag(filePath, '20x20', 'webp', raced.revision),
+    ).toBe(buildFileETag(filePath, '20x20', 'webp', steady.revision))
   })
 })
