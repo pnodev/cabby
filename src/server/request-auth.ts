@@ -15,8 +15,8 @@ export function requireWriteToken(request: Request): Response | undefined {
     return new Response(
       'WRITE_AUTH_TOKEN environment variable is not set (or legacy UPLOAD_AUTH_SECRET)',
       {
-      status: 500,
-      headers: { 'Content-Type': 'text/plain' },
+        status: 500,
+        headers: { 'Content-Type': 'text/plain' },
       },
     )
   }
@@ -30,4 +30,12 @@ export function requireWriteToken(request: Request): Response | undefined {
   }
 
   return undefined
+}
+
+/** Throws when the request lacks a valid write token (for server functions). */
+export function assertWriteToken(request: Request): void {
+  const unauthorized = requireWriteToken(request)
+  if (unauthorized) {
+    throw unauthorized
+  }
 }

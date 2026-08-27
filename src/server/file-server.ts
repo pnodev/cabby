@@ -488,17 +488,22 @@ export const getAllFiles = createServerFn().handler(
       isImage: boolean
       hasCache: boolean
       cacheCount: number
+      isPrivate: boolean
     }>
   > => {
     const path = await getPath()
     const fs = await getFs()
     const storagePath = getStoragePath()
     const cacheDir = await getCachePath()
+    const { isPrivateFile, CABBY_META_DIR } = await import(
+      '#/server/file-metadata'
+    )
     const files: Array<{
       path: string
       isImage: boolean
       hasCache: boolean
       cacheCount: number
+      isPrivate: boolean
     }> = []
 
     async function walkDirectory(
@@ -515,8 +520,8 @@ export const getAllFiles = createServerFn().handler(
             : entry.name
 
           if (entry.isDirectory()) {
-            // Skip cache directory
-            if (entry.name !== '.cache') {
+            // Skip cache and Cabby metadata directories
+            if (entry.name !== '.cache' && entry.name !== CABBY_META_DIR) {
               await walkDirectory(fullPath, relativePath)
             }
           } else if (entry.isFile()) {
@@ -526,11 +531,13 @@ export const getAllFiles = createServerFn().handler(
             const cacheCount = isImage
               ? await countCacheFiles(relativePath, cacheDir)
               : 0
+            const isPrivate = await isPrivateFile(storagePath, relativePath)
             files.push({
               path: relativePath,
               isImage,
               hasCache: cacheCount > 0,
               cacheCount,
+              isPrivate,
             })
           }
         }
@@ -652,76 +659,93 @@ export const getCachedVersions = createServerFn()
     },
   )
 
-// export function getCachedVersions(imagePath: string): Array<{
-//   fileName: string
-//   size?: string
-//   format: string
-//   url: string
-// }> {
-//   const cacheDir = getCachePath()
-//   const fileName = basename(imagePath) // Includes extension
-//   const fileCacheDir = join(cacheDir, fileName)
-//   const versions: Array<{ fileName: string; size?: string; format: string; url: string }> = []
+const WEB_UI_SIGNED_URL_TTL = 900
 
-//   if (!existsSync(fileCacheDir)) {
-//     return versions
-//   }
+const GetFileDetailViewInputSchema = z.object({
+  filePath: z.string(),
+})
 
-//   try {
-//     const cacheFiles = readdirSync(fileCacheDir, { withFileTypes: true })
+export const getFileDetailView = createServerFn()
+  .inputValidator(GetFileDetailViewInputSchema)
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      path: string
+      isImage: boolean
+      isPrivate: boolean
+      fileUrl: string
+      versions: Array<{
+        fileName: string
+        size?: string
+        format: string
+        url: string
+      }>
+    }> => {
+      const filePath = data.filePath
+      const isImage = await checkIsImageFile(filePath)
+      const storagePath = getStoragePath()
+      const { isPrivateFile } = await import('#/server/file-metadata')
+      const isPrivate = await isPrivateFile(storagePath, filePath)
 
-//     for (const entry of cacheFiles) {
-//       if (entry.isFile()) {
-//         const cacheFileName = entry.name
-//         // Parse cache file name: {baseName}_{width}x{height}.{format} or {baseName}.{format}
-//         const match = cacheFileName.match(/^(.+?)(?:_(\d+)x(\d+))?\.(.+)$/)
+      if (isPrivate) {
+        const { getRequest } = await import('@tanstack/react-start/server')
+        const { assertWriteToken } = await import('#/server/request-auth')
+        assertWriteToken(getRequest())
+      }
 
-//         if (match) {
-//           const [, , width, height, format] = match
+      const rawVersions = isImage
+        ? await getCachedVersions({ data: { imagePath: filePath } })
+        : []
 
-//           // Build URL with parameters
-//           const params = new URLSearchParams()
-//           if (width && height) {
-//             params.set('size', `${width}x${height}`)
-//           }
-//           if (format) {
-//             params.set('format', format)
-//           }
+      const { encodeStoragePathSegments } = await import('#/server/signed-url')
+      const encodedPath = encodeStoragePathSegments(filePath)
+      let fileUrl = `/files/${encodedPath}`
+      let versions = rawVersions.map((version) => {
+        const versionUrl = new URL(version.url, 'http://local')
+        const query = versionUrl.search
+        return {
+          ...version,
+          url: `/files/${encodedPath}${query}`,
+        }
+      })
 
-//           const url = `/files/${imagePath}${params.toString() ? `?${params.toString()}` : ''}`
+      if (isPrivate) {
+        const { buildSignedFileRelativeUrl } = await import('#/server/signed-url')
+        fileUrl = buildSignedFileRelativeUrl({
+          filePath,
+          ttlSeconds: WEB_UI_SIGNED_URL_TTL,
+        })
+        versions = rawVersions.map((version) => {
+          const versionUrl = new URL(version.url, 'http://local')
+          return {
+            ...version,
+            url: buildSignedFileRelativeUrl({
+              filePath,
+              sizeParam: versionUrl.searchParams.get('size') || undefined,
+              formatParam: versionUrl.searchParams.get('format') || undefined,
+              ttlSeconds: WEB_UI_SIGNED_URL_TTL,
+            }),
+          }
+        })
+      }
 
-//           versions.push({
-//             fileName: cacheFileName,
-//             size: width && height ? `${width}x${height}` : undefined,
-//             format,
-//             url,
-//           })
-//         }
-//       }
-//     }
-
-//     return versions.sort((a, b) => {
-//       // Sort by size first, then by format
-//       if (a.size && !b.size) return -1
-//       if (!a.size && b.size) return 1
-//       if (a.size && b.size) {
-//         const aSize = parseInt(a.size.split('x')[0])
-//         const bSize = parseInt(b.size.split('x')[0])
-//         if (aSize !== bSize) return aSize - bSize
-//       }
-//       return a.format.localeCompare(b.format)
-//     })
-//   } catch (error) {
-//     console.error('Error getting cached versions:', error)
-//     return versions
-//   }
-// }
+      return { path: filePath, isImage, isPrivate, fileUrl, versions }
+    },
+  )
 
 // Upload a file to the storage directory
 export async function uploadFile(
   filePath: string,
   fileBuffer: Buffer,
-): Promise<{ success: boolean; path: string; error?: string; revision?: string }> {
+  options?: { isPrivate?: boolean },
+): Promise<{
+  success: boolean
+  path: string
+  error?: string
+  revision?: string
+  isPrivate?: boolean
+}> {
   try {
     const path = await getPath()
     const fs = await getFs()
@@ -746,6 +770,11 @@ export async function uploadFile(
       fs.mkdirSync(fileDir, { recursive: true })
     }
 
+    const { setFilePrivate } = await import('#/server/file-metadata')
+    if (options?.isPrivate === true) {
+      await setFilePrivate(storagePath, normalizedPath, true)
+    }
+
     // Write the file
     fs.writeFileSync(fullPath, fileBuffer)
 
@@ -753,7 +782,17 @@ export async function uploadFile(
     await clearCacheForFile(normalizedPath)
 
     const revision = String(fs.statSync(fullPath).mtimeMs)
-    return { success: true, path: normalizedPath, revision }
+
+    if (options?.isPrivate !== true) {
+      await setFilePrivate(storagePath, normalizedPath, false)
+    }
+
+    return {
+      success: true,
+      path: normalizedPath,
+      revision,
+      isPrivate: options?.isPrivate === true,
+    }
   } catch (error) {
     console.error('Error uploading file:', error)
     return {
@@ -790,6 +829,9 @@ export async function deleteFile(
     }
 
     fs.unlinkSync(fullPath)
+
+    const { deleteFileMetadata } = await import('#/server/file-metadata')
+    await deleteFileMetadata(storagePath, normalizedPath)
 
     // Best-effort: remove cache directory for this file, if present
     const deletedCache = await clearCacheForFile(normalizedPath)
