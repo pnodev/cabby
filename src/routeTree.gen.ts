@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SignRouteImport } from './routes/sign'
 import { Route as UploadRouteImport } from './routes/upload'
 import { Route as FileSplatRouteImport } from './routes/file.$'
 import { Route as FilesSplatRouteImport } from './routes/files.$'
@@ -17,6 +18,11 @@ import { Route as FilesSplatRouteImport } from './routes/files.$'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignRoute = SignRouteImport.update({
+  id: '/sign',
+  path: '/sign',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UploadRoute = UploadRouteImport.update({
@@ -37,12 +43,14 @@ const FilesSplatRoute = FilesSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/sign': typeof SignRoute
   '/upload': typeof UploadRoute
   '/file/$': typeof FileSplatRoute
   '/files/$': typeof FilesSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/sign': typeof SignRoute
   '/upload': typeof UploadRoute
   '/file/$': typeof FileSplatRoute
   '/files/$': typeof FilesSplatRoute
@@ -50,20 +58,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/sign': typeof SignRoute
   '/upload': typeof UploadRoute
   '/file/$': typeof FileSplatRoute
   '/files/$': typeof FilesSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/upload' | '/file/$' | '/files/$'
+  fullPaths: '/' | '/sign' | '/upload' | '/file/$' | '/files/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/upload' | '/file/$' | '/files/$'
-  id: '__root__' | '/' | '/upload' | '/file/$' | '/files/$'
+  to: '/' | '/sign' | '/upload' | '/file/$' | '/files/$'
+  id: '__root__' | '/' | '/sign' | '/upload' | '/file/$' | '/files/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SignRoute: typeof SignRoute
   UploadRoute: typeof UploadRoute
   FileSplatRoute: typeof FileSplatRoute
   FilesSplatRoute: typeof FilesSplatRoute
@@ -76,6 +86,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign': {
+      id: '/sign'
+      path: '/sign'
+      fullPath: '/sign'
+      preLoaderRoute: typeof SignRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/upload': {
@@ -104,6 +121,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SignRoute: SignRoute,
   UploadRoute: UploadRoute,
   FileSplatRoute: FileSplatRoute,
   FilesSplatRoute: FilesSplatRoute,

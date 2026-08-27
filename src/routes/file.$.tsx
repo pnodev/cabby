@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { requireWebUiEnabled } from '#/server/web-ui'
+import { getFileDetailView } from '#/server/file-server'
 import {
   Card,
   CardContent,
@@ -8,35 +9,31 @@ import {
   CardTitle,
 } from '#/components/ui/card'
 import { Badge } from '#/components/ui/badge'
+import { Lock } from 'lucide-react'
 
 export const Route = createFileRoute('/file/$')({
   loader: async ({ params }) => {
     await requireWebUiEnabled()
     try {
-      // Dynamic import to ensure this only runs server-side
-      const { getCachedVersions, isImageFile } =
-        await import('#/server/file-server')
-
-      // Get the file path from the route parameter
-      // Decode the path in case it contains URL-encoded characters
       const path = decodeURIComponent(params._splat || '')
-      const isImage = await isImageFile({ data: { filePath: path } })
-      // Only get cached versions for images
-      const versions = isImage
-        ? await getCachedVersions({ data: { imagePath: path } })
-        : []
-      return { path, isImage, versions }
+      return await getFileDetailView({ data: { filePath: path } })
     } catch (error) {
       console.error('Error loading file details:', error)
       const path = decodeURIComponent(params._splat || '')
-      return { path, isImage: false, versions: [] }
+      return {
+        path,
+        isImage: false,
+        isPrivate: false,
+        fileUrl: `/files/${path}`,
+        versions: [],
+      }
     }
   },
   component: FileDetail,
 })
 
 function FileDetail() {
-  const { path, isImage, versions } = Route.useLoaderData()
+  const { path, isImage, isPrivate, fileUrl, versions } = Route.useLoaderData()
 
   return (
     <div className="page-wrap px-4 pb-8 pt-14">
@@ -47,11 +44,24 @@ function FileDetail() {
         >
           ← Back to files
         </Link>
-        <h1 className="text-3xl font-bold mb-2">{path}</h1>
+        <div className="flex items-center gap-3 mb-2">
+          <h1 className="text-3xl font-bold">{path}</h1>
+          {isPrivate && (
+            <Badge variant="secondary">
+              <Lock className="h-3 w-3 mr-1" />
+              Private
+            </Badge>
+          )}
+        </div>
+        {isPrivate && (
+          <p className="text-sm text-muted-foreground">
+            This file requires a signed URL to access. Links below include a
+            short-lived signature for preview (15 minutes).
+          </p>
+        )}
       </div>
 
       <div className="space-y-6">
-        {/* Original File */}
         <Card>
           <CardHeader>
             <CardTitle>Original File</CardTitle>
@@ -65,7 +75,7 @@ function FileDetail() {
             <div className="space-y-4">
               {isImage ? (
                 <img
-                  src={`/files/${path}`}
+                  src={fileUrl}
                   alt={path}
                   className="max-w-full h-auto rounded-lg border"
                 />
@@ -78,7 +88,7 @@ function FileDetail() {
               )}
               <div>
                 <a
-                  href={`/files/${path}`}
+                  href={fileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-sm text-primary hover:underline"
@@ -90,7 +100,6 @@ function FileDetail() {
           </CardContent>
         </Card>
 
-        {/* Cached Versions - Only for images */}
         {isImage && (
           <Card>
             <CardHeader>

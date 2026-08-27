@@ -4,6 +4,8 @@
 
 Cabby is a file storage server with built-in image optimization capabilities. It provides a simple API for storing, retrieving, and transforming files, with special support for image manipulation and caching.
 
+**Integrating private files in your app?** See **[docs/private-files.md](docs/private-files.md)** — architecture, API reference, and implementation guide for agents and developers.
+
 ## License
 
 Cabby is open source software licensed under the MIT License.
@@ -29,6 +31,10 @@ Before running the application, you need to set the following environment variab
 
 - **`WRITE_AUTH_TOKEN`** - Token required for write operations (upload and delete). Clients must send it via the `Authorization` header (`Bearer <token>` or just `<token>`).
 
+- **`SIGNED_URL_SECRET`** - Secret used to sign URLs for private files (HMAC-SHA256). Falls back to `WRITE_AUTH_TOKEN` when unset. Required when private files are used.
+
+- **`SIGNED_URL_DEFAULT_TTL`** - Default signed URL lifetime in seconds. Defaults to `3600` (1 hour).
+
 ### Example `.env` file
 
 Create a `.env` file in the project root:
@@ -37,6 +43,8 @@ Create a `.env` file in the project root:
 FILE_STORAGE_PATH=/Users/username/Documents/filestorage
 FILE_CACHE_PATH=/Users/username/Documents/filestorage/.cache
 WRITE_AUTH_TOKEN=change-me
+SIGNED_URL_SECRET=change-me-signing-secret
+SIGNED_URL_DEFAULT_TTL=3600
 ```
 
 ## Deployment
@@ -115,13 +123,72 @@ Content-Type: multipart/form-data
 
 - `file` - The file to upload (File object)
 - `path` - The path where the file should be stored (relative to `FILE_STORAGE_PATH`)
+- `private` (optional) - Set to `true`, `1`, or `on` to store the file as private. Private files can only be read via signed URLs.
 
 **Example using curl:**
 
 ```bash
 curl -X POST http://localhost:3000/upload \
+  -H "Authorization: Bearer change-me" \
   -F "file=@/path/to/local/file.jpg" \
-  -F "path=images/uploaded-file.jpg"
+  -F "path=images/uploaded-file.jpg" \
+  -F "private=true"
+```
+
+**Response (public file):**
+
+```json
+{
+  "success": true,
+  "path": "images/uploaded-file.jpg",
+  "url": "http://localhost:3000/files/images/uploaded-file.jpg?v=1735123456789",
+  "isPrivate": false,
+  "revision": "1735123456789"
+}
+```
+
+**Response (private file):**
+
+```json
+{
+  "success": true,
+  "path": "images/uploaded-file.jpg",
+  "url": "http://localhost:3000/files/images/uploaded-file.jpg?v=1735123456789&se=1735127056&sig=...",
+  "isPrivate": true,
+  "revision": "1735123456789"
+}
+```
+
+The `url` for private files includes `se` (expiry, Unix seconds) and `sig` (HMAC signature). Direct access to `/files/{path}` without valid signed query parameters returns `403 Forbidden`.
+
+For full integration guidance (architecture, app backend patterns, security rules, and examples for agents), see **[docs/private-files.md](docs/private-files.md)**.
+
+### Private Files & Signed URLs (quick reference)
+
+Upload with `private=true` to restrict read access to signed URLs (similar to Azure SAS tokens).
+
+**Signed URL query parameters:**
+
+- `se` - Expiry time as Unix seconds
+- `sig` - HMAC-SHA256 signature (base64url) covering the path, expiry, and any transform params (`size`, `format`)
+
+Image transforms on private files require the signature to cover the same `size` and `format` values.
+
+**Generate a signed URL for an existing private file:**
+
+```
+POST /sign
+Authorization: Bearer <WRITE_AUTH_TOKEN>
+Content-Type: application/json
+```
+
+```json
+{
+  "path": "images/private-photo.jpg",
+  "expiresInSeconds": 3600,
+  "size": "180x240",
+  "format": "webp"
+}
 ```
 
 **Response:**
@@ -129,7 +196,10 @@ curl -X POST http://localhost:3000/upload \
 ```json
 {
   "success": true,
-  "path": "images/uploaded-file.jpg"
+  "path": "images/private-photo.jpg",
+  "url": "http://localhost:3000/files/images/private-photo.jpg?size=180x240&format=webp&se=1735127056&sig=...",
+  "expiresAt": 1735127056,
+  "expiresInSeconds": 3600
 }
 ```
 

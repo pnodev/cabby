@@ -37,12 +37,6 @@ export const Route = createFileRoute('/files/$')({
 
           const path = pathMatch[1]
 
-          // Parse query parameters
-          const sizeParam = url.searchParams.get('size') || undefined
-          const formatParam = url.searchParams.get('format') || undefined
-          const sourceRevisionInUrl = url.searchParams.get('v') || undefined
-
-          // Check if FILE_STORAGE_PATH is set
           const storagePath = process.env.FILE_STORAGE_PATH
           if (!storagePath) {
             return new Response(
@@ -52,6 +46,44 @@ export const Route = createFileRoute('/files/$')({
                 headers: { 'Content-Type': 'text/plain' },
               },
             )
+          }
+
+          // Parse query parameters
+          const sizeParam = url.searchParams.get('size') || undefined
+          const formatParam = url.searchParams.get('format') || undefined
+          const sourceRevisionInUrl = url.searchParams.get('v') || undefined
+
+          const {
+            normalizeRelativeStoragePath: normalizePath,
+          } = await import('#/server/file-server')
+          const pathMod = await import('node:path')
+          const normalizedPath = normalizePath(path, pathMod)
+
+          const { isPrivateFile } = await import('#/server/file-metadata')
+          const fileIsPrivate = await isPrivateFile(storagePath, normalizedPath)
+
+          let buildPrivateFileCacheControl: (() => string) | undefined
+          if (fileIsPrivate) {
+            const signedUrl = await import('#/server/signed-url')
+            buildPrivateFileCacheControl = signedUrl.buildPrivateFileCacheControl
+            const verification = signedUrl.verifySignedUrlAccess({
+              filePath: normalizedPath,
+              searchParams: url.searchParams,
+            })
+            if (!verification.valid) {
+              const status =
+                verification.reason === 'missing_secret' ? 500 : 403
+              const message =
+                verification.reason === 'missing_secret'
+                  ? 'SIGNED_URL_SECRET (or WRITE_AUTH_TOKEN) is not configured'
+                  : verification.reason === 'expired'
+                    ? 'Signed URL has expired'
+                    : 'Forbidden'
+              return new Response(message, {
+                status,
+                headers: { 'Content-Type': 'text/plain' },
+              })
+            }
           }
 
           const isImage = await isImageFile({ data: { filePath: path } })
@@ -67,7 +99,9 @@ export const Route = createFileRoute('/files/$')({
             )
           }
 
-          const cacheControl = buildFileCacheControl(sourceRevisionInUrl)
+          const cacheControl = fileIsPrivate
+            ? buildPrivateFileCacheControl!()
+            : buildFileCacheControl(sourceRevisionInUrl)
           const ifNoneMatch = request.headers.get('If-None-Match')
 
           // Cheap 304 path: only skip the body when the revision is stable.

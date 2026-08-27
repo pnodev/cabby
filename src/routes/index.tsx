@@ -10,7 +10,7 @@ import {
 } from '#/components/ui/card'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
-import { ExternalLink, Grid3x3, List, Upload } from 'lucide-react'
+import { ExternalLink, Grid3x3, List, Lock, Upload } from 'lucide-react'
 import { getAllFiles } from '#/server/file-server'
 import { requireWebUiEnabled } from '#/server/web-ui'
 
@@ -85,25 +85,39 @@ function App() {
               isImage: boolean
               hasCache: boolean
               cacheCount: number
+              isPrivate: boolean
             }) => (
               <Card key={file.path}>
                 <CardHeader>
                   <CardAction>
-                    <a
-                      href={`/files/${file.path}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                      aria-label="Open file in new tab"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
+                    {!file.isPrivate ? (
+                      <a
+                        href={`/files/${file.path}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label="Open file in new tab"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    ) : (
+                      <Lock
+                        className="h-4 w-4 text-muted-foreground"
+                        aria-label="Private file — open details to get a signed URL"
+                      />
+                    )}
                   </CardAction>
                   <CardTitle className="text-sm font-medium truncate">
                     {file.path}
                   </CardTitle>
                   <CardDescription>
                     <div className="flex items-center gap-2 mt-2">
+                      {file.isPrivate && (
+                        <Badge variant="secondary">
+                          <Lock className="h-3 w-3 mr-1" />
+                          Private
+                        </Badge>
+                      )}
                       {file.isImage ? (
                         file.hasCache ? (
                           <Badge variant="secondary">
@@ -141,6 +155,7 @@ function App() {
               isImage: boolean
               hasCache: boolean
               cacheCount: number
+              isPrivate: boolean
             }) => (
               <Card key={file.path}>
                 <CardContent className="py-3">
@@ -155,6 +170,11 @@ function App() {
                           {file.path}
                         </Link>
                         <div className="flex items-center gap-2">
+                          {file.isPrivate && (
+                            <Badge variant="secondary" className="text-xs">
+                              Private
+                            </Badge>
+                          )}
                           {file.isImage ? (
                             file.hasCache ? (
                               <Badge variant="secondary" className="text-xs">
@@ -173,15 +193,19 @@ function App() {
                         </div>
                       </div>
                     </div>
-                    <a
-                      href={`/files/${file.path}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                      aria-label="Open file in new tab"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
+                    {!file.isPrivate ? (
+                      <a
+                        href={`/files/${file.path}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                        aria-label="Open file in new tab"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    ) : (
+                      <Lock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    )}
                   </div>
                 </CardContent>
               </Card>
