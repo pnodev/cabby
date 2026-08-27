@@ -100,6 +100,13 @@ export function buildSignedFileUrl(options: {
   return new URL(relative, options.origin).href
 }
 
+export function encodeStoragePathSegments(filePath: string): string {
+  return filePath
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+}
+
 export function buildSignedFileRelativeUrl(options: {
   filePath: string
   sizeParam?: string
@@ -107,10 +114,7 @@ export function buildSignedFileRelativeUrl(options: {
   sourceRevision?: string
   ttlSeconds?: number
 }): string {
-  const encodedPath = options.filePath
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/')
+  const encodedPath = encodeStoragePathSegments(options.filePath)
   const url = new URL(`/files/${encodedPath}`, 'http://local')
 
   if (options.sourceRevision) {
@@ -124,7 +128,8 @@ export function buildSignedFileRelativeUrl(options: {
     ttlSeconds: options.ttlSeconds,
   })
 
-  return appendSignedUrlParams(url, signed).pathname + url.search
+  const signedUrl = appendSignedUrlParams(url, signed)
+  return signedUrl.pathname + signedUrl.search
 }
 
 export type VerifySignedUrlResult =

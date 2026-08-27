@@ -55,16 +55,28 @@ export async function readFileMetadata(
   filePath: string,
 ): Promise<FileMetadata | null> {
   const fs = await getFs()
+  const metaPath = await getMetadataFilePath(storagePath, filePath)
+
+  let raw: string
   try {
-    const metaPath = await getMetadataFilePath(storagePath, filePath)
-    if (!fs.existsSync(metaPath)) return null
-    const raw = fs.readFileSync(metaPath, 'utf8')
-    const parsed = JSON.parse(raw) as Partial<FileMetadata>
-    if (typeof parsed.private !== 'boolean') return null
-    return { private: parsed.private }
-  } catch {
-    return null
+    raw = fs.readFileSync(metaPath, 'utf8')
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
+      return null
+    }
+    throw error
   }
+
+  const parsed = JSON.parse(raw) as Partial<FileMetadata>
+  if (typeof parsed.private !== 'boolean') {
+    throw new Error('Invalid file metadata')
+  }
+  return { private: parsed.private }
 }
 
 export async function isPrivateFile(

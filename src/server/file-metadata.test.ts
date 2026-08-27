@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { isPrivateFile, setFilePrivate } from './file-metadata'
+import { isPrivateFile, readFileMetadata, setFilePrivate } from './file-metadata'
 import { uploadFile } from './file-server'
 
 describe('private files', () => {
@@ -57,5 +57,13 @@ describe('private files', () => {
 
     await setFilePrivate(storageDir, 'images/a.jpg', false)
     expect(await isPrivateFile(storageDir, 'images/a.jpg')).toBe(false)
+  })
+
+  it('readFileMetadata throws on invalid JSON', async () => {
+    const metaDir = path.join(storageDir, '.cabby', 'metadata', 'broken')
+    fs.mkdirSync(metaDir, { recursive: true })
+    fs.writeFileSync(path.join(metaDir, 'file.json'), '{not json')
+
+    await expect(readFileMetadata(storageDir, 'broken/file')).rejects.toThrow()
   })
 })

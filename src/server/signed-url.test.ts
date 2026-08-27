@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildSignaturePayload,
+  buildSignedFileRelativeUrl,
   createSignedUrlParams,
   signPayload,
   verifySignedUrlAccess,
@@ -107,5 +108,21 @@ describe('signed-url', () => {
         secret: 'test-secret',
       }),
     ).toEqual({ valid: false, reason: 'missing_params' })
+  })
+
+  it('buildSignedFileRelativeUrl retains signed and transform query params', () => {
+    const relative = buildSignedFileRelativeUrl({
+      filePath: 'images/a.jpg',
+      sizeParam: '180x240',
+      formatParam: 'webp',
+      ttlSeconds: 3600,
+    })
+    const url = new URL(relative, 'http://local')
+
+    expect(url.pathname).toBe('/files/images/a.jpg')
+    expect(url.searchParams.get('size')).toBe('180x240')
+    expect(url.searchParams.get('format')).toBe('webp')
+    expect(url.searchParams.get('se')).toMatch(/^\d+$/)
+    expect(url.searchParams.get('sig')).toBeTruthy()
   })
 })

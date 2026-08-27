@@ -176,7 +176,7 @@ Image transforms on private files require the signature to cover the same `size`
 
 **Generate a signed URL for an existing private file:**
 
-```
+```http
 POST /sign
 Authorization: Bearer <WRITE_AUTH_TOKEN>
 Content-Type: application/json

@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, notFound } from '@tanstack/react-router'
 import { requireWebUiEnabled } from '#/server/web-ui'
 import { getFileDetailView } from '#/server/file-server'
 import {
@@ -14,19 +14,14 @@ import { Lock } from 'lucide-react'
 export const Route = createFileRoute('/file/$')({
   loader: async ({ params }) => {
     await requireWebUiEnabled()
+    const path = decodeURIComponent(params._splat || '')
     try {
-      const path = decodeURIComponent(params._splat || '')
       return await getFileDetailView({ data: { filePath: path } })
     } catch (error) {
-      console.error('Error loading file details:', error)
-      const path = decodeURIComponent(params._splat || '')
-      return {
-        path,
-        isImage: false,
-        isPrivate: false,
-        fileUrl: `/files/${path}`,
-        versions: [],
+      if (error instanceof Response && (error.status === 401 || error.status === 500)) {
+        throw notFound()
       }
+      throw error
     }
   },
   component: FileDetail,

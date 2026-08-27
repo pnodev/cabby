@@ -51,7 +51,7 @@ sequenceDiagram
 
 ### Upload a private file
 
-```
+```http
 POST /upload
 Authorization: Bearer <WRITE_AUTH_TOKEN>
 Content-Type: multipart/form-data
@@ -83,17 +83,26 @@ need access.
 
 ### Generate a signed URL
 
-```
+```http
 POST /sign
 Authorization: Bearer <WRITE_AUTH_TOKEN>
 Content-Type: application/json
 ```
 
-**Request body:**
+**Request body (document, no transforms):**
 
 ```json
 {
   "path": "users/123/doc.pdf",
+  "expiresInSeconds": 900
+}
+```
+
+**Request body (image with transforms — `size` and `format` must match the GET URL):**
+
+```json
+{
+  "path": "users/123/avatar.jpg",
   "expiresInSeconds": 900,
   "size": "180x240",
   "format": "webp"
@@ -107,13 +116,25 @@ Content-Type: application/json
 | `size` | No | Image transform: e.g. `180x240`. Must match the eventual GET request |
 | `format` | No | Image transform: e.g. `webp`. Must match the eventual GET request |
 
-**Success response:**
+**Success response (document):**
 
 ```json
 {
   "success": true,
   "path": "users/123/doc.pdf",
   "url": "https://cabby.example.com/files/users/123/doc.pdf?se=1735127956&sig=...",
+  "expiresAt": 1735127956,
+  "expiresInSeconds": 900
+}
+```
+
+**Success response (image with transforms):**
+
+```json
+{
+  "success": true,
+  "path": "users/123/avatar.jpg",
+  "url": "https://cabby.example.com/files/users/123/avatar.jpg?size=180x240&format=webp&se=1735127956&sig=...",
   "expiresAt": 1735127956,
   "expiresInSeconds": 900
 }
@@ -129,7 +150,7 @@ Content-Type: application/json
 
 ### Read a file
 
-```
+```http
 GET /files/{path}[?size=...&format=...&se=...&sig=...]
 ```
 
@@ -145,6 +166,7 @@ GET /files/{path}[?size=...&format=...&se=...&sig=...]
 | `403` | `Forbidden` | Missing or invalid signature |
 | `403` | `Signed URL has expired` | `se` is in the past |
 | `404` | `File not found` | Path does not exist |
+| `500` | `SIGNED_URL_SECRET (or WRITE_AUTH_TOKEN) is not configured` | Signing secret not configured on the Cabby server |
 
 Private file responses use `Cache-Control: private, no-store`.
 
@@ -162,7 +184,7 @@ Query parameters on the file URL:
 
 **Signature payload** (newline-separated):
 
-```
+```text
 GET
 {normalized-storage-path}
 {expiresAt}
@@ -226,7 +248,7 @@ Do **not** store signed URLs as long-lived assets. They expire.
 Use the signed URL returned by your backend:
 
 ```html
-<img src="{signedUrl}" alt="Avatar" />
+<img src="SIGNED_URL" alt="Avatar" />
 ```
 
 ```typescript
@@ -254,7 +276,7 @@ those transform params.
 
 Example signed URL:
 
-```
+```text
 /files/photos/cat.jpg?size=400x300&format=webp&se=1735127956&sig=...
 ```
 
@@ -270,7 +292,7 @@ Example signed URL:
 
 Private flags are stored on the Cabby server at:
 
-```
+```text
 {FILE_STORAGE_PATH}/.cabby/metadata/{path}.json
 ```
 

@@ -688,12 +688,27 @@ export const getFileDetailView = createServerFn()
       const { isPrivateFile } = await import('#/server/file-metadata')
       const isPrivate = await isPrivateFile(storagePath, filePath)
 
+      if (isPrivate) {
+        const { getRequest } = await import('@tanstack/react-start/server')
+        const { assertWriteToken } = await import('#/server/request-auth')
+        assertWriteToken(getRequest())
+      }
+
       const rawVersions = isImage
         ? await getCachedVersions({ data: { imagePath: filePath } })
         : []
 
-      let fileUrl = `/files/${filePath}`
-      let versions = rawVersions
+      const { encodeStoragePathSegments } = await import('#/server/signed-url')
+      const encodedPath = encodeStoragePathSegments(filePath)
+      let fileUrl = `/files/${encodedPath}`
+      let versions = rawVersions.map((version) => {
+        const versionUrl = new URL(version.url, 'http://local')
+        const query = versionUrl.search
+        return {
+          ...version,
+          url: `/files/${encodedPath}${query}`,
+        }
+      })
 
       if (isPrivate) {
         const { buildSignedFileRelativeUrl } = await import('#/server/signed-url')
@@ -755,6 +770,11 @@ export async function uploadFile(
       fs.mkdirSync(fileDir, { recursive: true })
     }
 
+    const { setFilePrivate } = await import('#/server/file-metadata')
+    if (options?.isPrivate === true) {
+      await setFilePrivate(storagePath, normalizedPath, true)
+    }
+
     // Write the file
     fs.writeFileSync(fullPath, fileBuffer)
 
@@ -763,8 +783,9 @@ export async function uploadFile(
 
     const revision = String(fs.statSync(fullPath).mtimeMs)
 
-    const { setFilePrivate } = await import('#/server/file-metadata')
-    await setFilePrivate(storagePath, normalizedPath, options?.isPrivate === true)
+    if (options?.isPrivate !== true) {
+      await setFilePrivate(storagePath, normalizedPath, false)
+    }
 
     return {
       success: true,
