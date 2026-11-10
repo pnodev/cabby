@@ -205,12 +205,11 @@ export async function clearCacheForFile(filePath: string): Promise<boolean> {
 }
 
 /**
- * Source content revision for cache identity (mtime ms).
- * Changes when the file is overwritten so ETags/URLs can bust stale caches.
+ * Resolve a storage-relative path to an absolute file path inside FILE_STORAGE_PATH.
+ * Throws `File not found` on traversal or missing files.
  */
-export async function getSourceRevision(filePath: string): Promise<string> {
+export async function resolveStoredFilePath(filePath: string): Promise<string> {
   const path = await getPath()
-  const fs = await getFs()
   const storagePath = getStoragePath()
   const relativePath = normalizeRelativeStoragePath(filePath, path)
   const fullPath = path.resolve(storagePath, relativePath)
@@ -222,11 +221,79 @@ export async function getSourceRevision(filePath: string): Promise<string> {
   ) {
     throw new Error('File not found')
   }
+
+  return fullPath
+}
+
+/**
+ * Source content revision for cache identity (mtime ms).
+ * Changes when the file is overwritten so ETags/URLs can bust stale caches.
+ */
+export async function getSourceRevision(filePath: string): Promise<string> {
+  const fs = await getFs()
+  const fullPath = await resolveStoredFilePath(filePath)
   if (!fs.existsSync(fullPath)) {
     throw new Error('File not found')
   }
 
   return String(fs.statSync(fullPath).mtimeMs)
+}
+
+/**
+ * Metadata for streaming a stored file without loading it into memory.
+ */
+export async function statStoredFile(filePath: string): Promise<{
+  fullPath: string
+  contentType: string
+  revision: string
+  size: number
+}> {
+  const path = await getPath()
+  const fs = await getFs()
+  const fullPath = await resolveStoredFilePath(filePath)
+
+  let stat: Awaited<ReturnType<typeof fs.promises.stat>>
+  try {
+    stat = await fs.promises.stat(fullPath)
+  } catch (error) {
+    const code =
+      error && typeof error === 'object' && 'code' in error
+        ? String((error as { code: unknown }).code)
+        : undefined
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      throw new Error('File not found')
+    }
+    throw error
+  }
+
+  if (!stat.isFile()) {
+    throw new Error('File not found')
+  }
+
+  return {
+    fullPath,
+    contentType: getContentType(path.extname(filePath)),
+    revision: String(stat.mtimeMs),
+    size: stat.size,
+  }
+}
+
+/**
+ * Stream bytes from disk. `end` is inclusive (same as Node createReadStream / HTTP Range).
+ */
+export async function createStoredFileWebStream(
+  fullPath: string,
+  range?: { start: number; end: number },
+): Promise<ReadableStream<Uint8Array>> {
+  const fs = await getFs()
+  const { Readable } = await import('node:stream')
+  const nodeStream = fs.createReadStream(
+    fullPath,
+    range
+      ? { start: range.start, end: range.end }
+      : undefined,
+  )
+  return Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>
 }
 
 /** Cache-Control: only mark versioned URLs (with `v`) as immutable. */
