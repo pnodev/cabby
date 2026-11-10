@@ -24,6 +24,7 @@ export type ServeFileRequestOptions = {
   wantsTransform: boolean
 }
 
+/** Shared 200/206 response headers for file bodies (CORS + Accept-Ranges). */
 function baseFileHeaders(
   request: Request,
   options: {
@@ -100,6 +101,9 @@ export async function serveFileResponse(
   })
 }
 
+/**
+ * Serve an image transform from `readStoredFile`, applying Range to the final bytes.
+ */
 async function serveTransformedFileResponse(options: {
   request: Request
   filePath: string
@@ -170,6 +174,9 @@ async function serveTransformedFileResponse(options: {
   })
 }
 
+/**
+ * Stream a stored file from disk with optional byte-range (no full-file buffer).
+ */
 async function serveStreamingFileResponse(options: {
   request: Request
   filePath: string

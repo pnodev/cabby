@@ -252,11 +252,20 @@ export async function statStoredFile(filePath: string): Promise<{
   const fs = await getFs()
   const fullPath = await resolveStoredFilePath(filePath)
 
-  if (!fs.existsSync(fullPath)) {
-    throw new Error('File not found')
+  let stat: Awaited<ReturnType<typeof fs.promises.stat>>
+  try {
+    stat = await fs.promises.stat(fullPath)
+  } catch (error) {
+    const code =
+      error && typeof error === 'object' && 'code' in error
+        ? String((error as { code: unknown }).code)
+        : undefined
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      throw new Error('File not found')
+    }
+    throw error
   }
 
-  const stat = fs.statSync(fullPath)
   if (!stat.isFile()) {
     throw new Error('File not found')
   }
