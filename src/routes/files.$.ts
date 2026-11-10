@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { getCorsPreflightHeaders, withCorsHeaders } from '#/server/cors'
+import { getCorsPreflightHeaders } from '#/server/cors'
 
 export const Route = createFileRoute('/files/$')({
   server: {
@@ -15,14 +15,10 @@ export const Route = createFileRoute('/files/$')({
       GET: async ({ request }) => {
         try {
           // Dynamic import to ensure this only runs server-side
-          const {
-            getFile,
-            isImageFile,
-            buildFileETag,
-            buildFileCacheControl,
-            getSourceRevision,
-            matchesIfNoneMatch,
-          } = await import('#/server/file-server')
+          const { isImageFile } = await import('#/server/file-server')
+          const { serveFileResponse } = await import(
+            '#/server/serve-file-response'
+          )
 
           // Parse the URL to get the file path
           const url = new URL(request.url)
@@ -67,46 +63,13 @@ export const Route = createFileRoute('/files/$')({
             )
           }
 
-          const cacheControl = buildFileCacheControl(sourceRevisionInUrl)
-          const ifNoneMatch = request.headers.get('If-None-Match')
-
-          // Cheap 304 path: only skip the body when the revision is stable.
-          const revisionHint = await getSourceRevision(path)
-          const etagHint = buildFileETag(
-            path,
+          return await serveFileResponse({
+            request,
+            filePath: path,
             sizeParam,
             formatParam,
-            revisionHint,
-          )
-          if (matchesIfNoneMatch(etagHint, ifNoneMatch)) {
-            const revisionNow = await getSourceRevision(path)
-            if (revisionNow === revisionHint) {
-              return new Response(null, {
-                status: 304,
-                headers: withCorsHeaders(request, {
-                  ETag: etagHint,
-                  'Cache-Control': cacheControl,
-                }),
-              })
-            }
-          }
-
-          // ETag must describe the same source snapshot as the returned bytes.
-          const { buffer, contentType, revision } = await getFile({
-            data: { filePath: path, sizeParam, formatParam },
-          })
-          const etag = buildFileETag(path, sizeParam, formatParam, revision)
-
-          // Long-lived cache; immutable only when the URL is versioned with `v`.
-          const headers = withCorsHeaders(request, {
-            'Content-Type': contentType,
-            'Cache-Control': cacheControl,
-            ETag: etag,
-          })
-
-          return new Response(new Uint8Array(buffer), {
-            status: 200,
-            headers,
+            sourceRevisionInUrl,
+            wantsTransform: Boolean(isImage && (sizeParam || formatParam)),
           })
         } catch (error) {
           console.error('Error serving file:', error)
