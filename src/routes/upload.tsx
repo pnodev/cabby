@@ -27,6 +27,11 @@ export const Route = createFileRoute('/upload')({
           const formData = await request.formData()
           const file = formData.get('file') as File
           const path = formData.get('path') as string
+          const privateField = formData.get('private')
+          const isPrivate =
+            privateField === 'true' ||
+            privateField === '1' ||
+            privateField === 'on'
 
           if (!file) {
             return json(
@@ -48,24 +53,38 @@ export const Route = createFileRoute('/upload')({
 
           // Dynamic import to ensure this only runs server-side
           const { uploadFile } = await import('#/server/file-server')
-          const result = await uploadFile(path, buffer)
+          const result = await uploadFile(path, buffer, { isPrivate })
 
           if (result.success) {
             const { getPublicOrigin } = await import('#/server/public-origin')
             const origin = getPublicOrigin(request)
-            const encodedPath = result.path
-              .split('/')
-              .map((segment) => encodeURIComponent(segment))
-              .join('/')
-            const url = new URL(`/files/${encodedPath}`, origin)
-            if (result.revision) {
-              url.searchParams.set('v', result.revision)
+
+            let url: string
+            if (result.isPrivate) {
+              const { buildSignedFileUrl } = await import('#/server/signed-url')
+              url = buildSignedFileUrl({
+                origin,
+                filePath: result.path,
+                sourceRevision: result.revision,
+              })
+            } else {
+              const encodedPath = result.path
+                .split('/')
+                .map((segment) => encodeURIComponent(segment))
+                .join('/')
+              const publicUrl = new URL(`/files/${encodedPath}`, origin)
+              if (result.revision) {
+                publicUrl.searchParams.set('v', result.revision)
+              }
+              url = publicUrl.href
             }
+
             return json({
               success: true,
               path: result.path,
-              url: url.href,
+              url,
               revision: result.revision,
+              isPrivate: result.isPrivate ?? false,
               mimeType: file.type || 'application/octet-stream',
               size: file.size,
             })
@@ -95,11 +114,13 @@ function UploadPage() {
   const router = useRouter()
   const [file, setFile] = React.useState<File | null>(null)
   const [path, setPath] = React.useState<string>('')
+  const [isPrivate, setIsPrivate] = React.useState(false)
   const [uploading, setUploading] = React.useState(false)
   const [result, setResult] = React.useState<{
     success: boolean
     path?: string
     url?: string
+    isPrivate?: boolean
     mimeType?: string
     size?: number
     error?: string
@@ -134,6 +155,9 @@ function UploadPage() {
       const formData = new FormData()
       formData.append('file', file)
       formData.append('path', path.trim())
+      if (isPrivate) {
+        formData.append('private', 'true')
+      }
 
       const response = await fetch('/upload', {
         method: 'POST',
@@ -144,6 +168,7 @@ function UploadPage() {
         success: boolean
         path?: string
         url?: string
+        isPrivate?: boolean
         mimeType?: string
         size?: number
         error?: string
@@ -154,6 +179,7 @@ function UploadPage() {
         // Reset form after successful upload
         setFile(null)
         setPath('')
+        setIsPrivate(false)
         // Reset file input
         const fileInput = document.getElementById(
           'file-input',
@@ -245,6 +271,27 @@ function UploadPage() {
                 </p>
               </div>
 
+              <div className="flex items-start gap-3">
+                <input
+                  id="private-input"
+                  type="checkbox"
+                  checked={isPrivate}
+                  onChange={(e) => setIsPrivate(e.target.checked)}
+                  disabled={uploading}
+                  className="mt-1 h-4 w-4 rounded border-input"
+                />
+                <div className="space-y-1">
+                  <label htmlFor="private-input" className="text-sm font-medium">
+                    Private file
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Private files can only be accessed via signed URLs (similar
+                    to SAS tokens). Direct links without a valid signature will
+                    be rejected.
+                  </p>
+                </div>
+              </div>
+
               {result && (
                 <div
                   className={`p-4 rounded-md border ${
@@ -263,7 +310,13 @@ function UploadPage() {
                           </p>
                           <p className="text-xs text-green-700 dark:text-green-300">
                             Path: {result.path}
+                            {result.isPrivate ? ' (private)' : ''}
                           </p>
+                          {result.url && result.isPrivate && (
+                            <p className="text-xs text-green-700 dark:text-green-300 break-all mt-1">
+                              Signed URL: {result.url}
+                            </p>
+                          )}
                         </div>
                       </>
                     ) : (
@@ -296,6 +349,7 @@ function UploadPage() {
                   onClick={() => {
                     setFile(null)
                     setPath('')
+                    setIsPrivate(false)
                     setResult(null)
                     const fileInput = document.getElementById(
                       'file-input',

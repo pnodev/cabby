@@ -166,4 +166,20 @@ describe('serveFileResponse range support', () => {
     expect(response.headers.get('Cache-Control')).toContain('immutable')
     expect(await response.text()).toBe('abcd')
   })
+
+  it('honors cacheControl override for private responses', async () => {
+    await withTempStorage()
+    await putFile('docs/secret.pdf', 'top-secret')
+
+    const response = await serveFileResponse({
+      request: new Request('http://localhost/files/docs/secret.pdf'),
+      filePath: 'docs/secret.pdf',
+      wantsTransform: false,
+      cacheControl: 'private, no-store',
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(await response.text()).toBe('top-secret')
+  })
 })
