@@ -15,10 +15,16 @@ export const Route = createFileRoute('/files/$')({
       GET: async ({ request }) => {
         try {
           // Dynamic import to ensure this only runs server-side
-          const { isImageFile } = await import('#/server/file-server')
+          const {
+            getStoragePath,
+            isImageFile,
+            normalizeRelativeStoragePath,
+          } = await import('#/server/file-server')
           const { serveFileResponse } = await import(
             '#/server/serve-file-response'
           )
+          const { evaluateFileReadAccess } = await import('#/server/file-access')
+          const pathMod = await import('node:path')
 
           // Parse the URL to get the file path
           const url = new URL(request.url)
@@ -39,8 +45,10 @@ export const Route = createFileRoute('/files/$')({
           const sourceRevisionInUrl = url.searchParams.get('v') || undefined
 
           // Check if FILE_STORAGE_PATH is set
-          const storagePath = process.env.FILE_STORAGE_PATH
-          if (!storagePath) {
+          let storagePath: string
+          try {
+            storagePath = getStoragePath()
+          } catch {
             return new Response(
               'FILE_STORAGE_PATH environment variable is not set',
               {
@@ -48,6 +56,19 @@ export const Route = createFileRoute('/files/$')({
                 headers: { 'Content-Type': 'text/plain' },
               },
             )
+          }
+
+          const normalizedPath = normalizeRelativeStoragePath(path, pathMod)
+          const access = await evaluateFileReadAccess({
+            storagePath,
+            normalizedPath,
+            searchParams: url.searchParams,
+          })
+          if (!access.allowed) {
+            return new Response(access.message, {
+              status: access.status,
+              headers: { 'Content-Type': 'text/plain' },
+            })
           }
 
           const isImage = await isImageFile({ data: { filePath: path } })
@@ -70,6 +91,7 @@ export const Route = createFileRoute('/files/$')({
             formatParam,
             sourceRevisionInUrl,
             wantsTransform: Boolean(isImage && (sizeParam || formatParam)),
+            cacheControl: access.cacheControl,
           })
         } catch (error) {
           console.error('Error serving file:', error)

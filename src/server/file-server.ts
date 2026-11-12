@@ -414,6 +414,10 @@ const GetFileInputSchema = z.object({
   filePath: z.string(),
   sizeParam: z.string().optional(),
   formatParam: z.string().optional(),
+  /** Signed expiry (`se`) required when the file is private. */
+  se: z.string().optional(),
+  /** Signature (`sig`) required when the file is private. */
+  sig: z.string().optional(),
 })
 
 const READ_STORED_FILE_MAX_ATTEMPTS = 3
@@ -449,6 +453,10 @@ export async function readStoredFile(options: {
   const normalizedPath = path
     .normalize(decodedPath)
     .replace(/^(\.\.(\/|\\|$))+/, '')
+  const { isDeniedInternalStoragePath } = await import('#/server/file-access')
+  if (isDeniedInternalStoragePath(normalizedPath)) {
+    throw new Error('File not found')
+  }
   const fullPath = path.resolve(storagePath, normalizedPath)
   const resolvedStoragePath = path.resolve(storagePath)
 
@@ -519,6 +527,28 @@ export async function readStoredFile(options: {
 export const getFile = createServerFn()
   .inputValidator(GetFileInputSchema)
   .handler(async (ctx) => {
+    const path = await getPath()
+    const storagePath = getStoragePath()
+    const normalizedPath = normalizeRelativeStoragePath(ctx.data.filePath, path)
+    const searchParams = new URLSearchParams()
+    if (ctx.data.sizeParam) searchParams.set('size', ctx.data.sizeParam)
+    if (ctx.data.formatParam) searchParams.set('format', ctx.data.formatParam)
+    if (ctx.data.se) searchParams.set('se', ctx.data.se)
+    if (ctx.data.sig) searchParams.set('sig', ctx.data.sig)
+
+    const { evaluateFileReadAccess } = await import('#/server/file-access')
+    const access = await evaluateFileReadAccess({
+      storagePath,
+      normalizedPath,
+      searchParams,
+    })
+    if (!access.allowed) {
+      throw new Response(access.message, {
+        status: access.status,
+        headers: { 'Content-Type': 'text/plain' },
+      })
+    }
+
     return readStoredFile(ctx.data)
   })
 
@@ -555,17 +585,22 @@ export const getAllFiles = createServerFn().handler(
       isImage: boolean
       hasCache: boolean
       cacheCount: number
+      isPrivate: boolean
     }>
   > => {
     const path = await getPath()
     const fs = await getFs()
     const storagePath = getStoragePath()
     const cacheDir = await getCachePath()
+    const { isPrivateFile, CABBY_META_DIR } = await import(
+      '#/server/file-metadata'
+    )
     const files: Array<{
       path: string
       isImage: boolean
       hasCache: boolean
       cacheCount: number
+      isPrivate: boolean
     }> = []
 
     async function walkDirectory(
@@ -582,8 +617,8 @@ export const getAllFiles = createServerFn().handler(
             : entry.name
 
           if (entry.isDirectory()) {
-            // Skip cache directory
-            if (entry.name !== '.cache') {
+            // Skip cache and Cabby metadata directories
+            if (entry.name !== '.cache' && entry.name !== CABBY_META_DIR) {
               await walkDirectory(fullPath, relativePath)
             }
           } else if (entry.isFile()) {
@@ -593,11 +628,13 @@ export const getAllFiles = createServerFn().handler(
             const cacheCount = isImage
               ? await countCacheFiles(relativePath, cacheDir)
               : 0
+            const isPrivate = await isPrivateFile(storagePath, relativePath)
             files.push({
               path: relativePath,
               isImage,
               hasCache: cacheCount > 0,
               cacheCount,
+              isPrivate,
             })
           }
         }
@@ -719,108 +756,187 @@ export const getCachedVersions = createServerFn()
     },
   )
 
-// export function getCachedVersions(imagePath: string): Array<{
-//   fileName: string
-//   size?: string
-//   format: string
-//   url: string
-// }> {
-//   const cacheDir = getCachePath()
-//   const fileName = basename(imagePath) // Includes extension
-//   const fileCacheDir = join(cacheDir, fileName)
-//   const versions: Array<{ fileName: string; size?: string; format: string; url: string }> = []
+const WEB_UI_SIGNED_URL_TTL = 900
 
-//   if (!existsSync(fileCacheDir)) {
-//     return versions
-//   }
+const GetFileDetailViewInputSchema = z.object({
+  filePath: z.string(),
+})
 
-//   try {
-//     const cacheFiles = readdirSync(fileCacheDir, { withFileTypes: true })
+export const getFileDetailView = createServerFn()
+  .inputValidator(GetFileDetailViewInputSchema)
+  .handler(
+    async ({
+      data,
+    }): Promise<{
+      path: string
+      isImage: boolean
+      isPrivate: boolean
+      needsWriteToken: boolean
+      fileUrl: string
+      versions: Array<{
+        fileName: string
+        size?: string
+        format: string
+        url: string
+      }>
+    }> => {
+      const filePath = data.filePath
+      const isImage = await checkIsImageFile(filePath)
+      const storagePath = getStoragePath()
+      const { isPrivateFile } = await import('#/server/file-metadata')
+      const isPrivate = await isPrivateFile(storagePath, filePath)
 
-//     for (const entry of cacheFiles) {
-//       if (entry.isFile()) {
-//         const cacheFileName = entry.name
-//         // Parse cache file name: {baseName}_{width}x{height}.{format} or {baseName}.{format}
-//         const match = cacheFileName.match(/^(.+?)(?:_(\d+)x(\d+))?\.(.+)$/)
+      if (isPrivate) {
+        const { getRequest } = await import('@tanstack/react-start/server')
+        const { requireWriteToken } = await import('#/server/request-auth')
+        const unauthorized = requireWriteToken(getRequest())
+        if (unauthorized) {
+          // Preserve write-token requirement; UI collects the token and signs via POST /sign.
+          return {
+            path: filePath,
+            isImage,
+            isPrivate: true,
+            needsWriteToken: true,
+            fileUrl: '',
+            versions: [],
+          }
+        }
+      }
 
-//         if (match) {
-//           const [, , width, height, format] = match
+      const rawVersions = isImage
+        ? await getCachedVersions({ data: { imagePath: filePath } })
+        : []
 
-//           // Build URL with parameters
-//           const params = new URLSearchParams()
-//           if (width && height) {
-//             params.set('size', `${width}x${height}`)
-//           }
-//           if (format) {
-//             params.set('format', format)
-//           }
+      const { encodeStoragePathSegments } = await import('#/server/signed-url')
+      const encodedPath = encodeStoragePathSegments(filePath)
+      let fileUrl = `/files/${encodedPath}`
+      let versions = rawVersions.map((version) => {
+        const versionUrl = new URL(version.url, 'http://local')
+        const query = versionUrl.search
+        return {
+          ...version,
+          url: `/files/${encodedPath}${query}`,
+        }
+      })
 
-//           const url = `/files/${imagePath}${params.toString() ? `?${params.toString()}` : ''}`
+      if (isPrivate) {
+        const { buildSignedFileRelativeUrl } = await import(
+          '#/server/signed-url'
+        )
+        fileUrl = buildSignedFileRelativeUrl({
+          filePath,
+          ttlSeconds: WEB_UI_SIGNED_URL_TTL,
+        })
+        versions = rawVersions.map((version) => {
+          const versionUrl = new URL(version.url, 'http://local')
+          return {
+            ...version,
+            url: buildSignedFileRelativeUrl({
+              filePath,
+              sizeParam: versionUrl.searchParams.get('size') || undefined,
+              formatParam: versionUrl.searchParams.get('format') || undefined,
+              ttlSeconds: WEB_UI_SIGNED_URL_TTL,
+            }),
+          }
+        })
+      }
 
-//           versions.push({
-//             fileName: cacheFileName,
-//             size: width && height ? `${width}x${height}` : undefined,
-//             format,
-//             url,
-//           })
-//         }
-//       }
-//     }
-
-//     return versions.sort((a, b) => {
-//       // Sort by size first, then by format
-//       if (a.size && !b.size) return -1
-//       if (!a.size && b.size) return 1
-//       if (a.size && b.size) {
-//         const aSize = parseInt(a.size.split('x')[0])
-//         const bSize = parseInt(b.size.split('x')[0])
-//         if (aSize !== bSize) return aSize - bSize
-//       }
-//       return a.format.localeCompare(b.format)
-//     })
-//   } catch (error) {
-//     console.error('Error getting cached versions:', error)
-//     return versions
-//   }
-// }
+      return {
+        path: filePath,
+        isImage,
+        isPrivate,
+        needsWriteToken: false,
+        fileUrl,
+        versions,
+      }
+    },
+  )
 
 // Upload a file to the storage directory
 export async function uploadFile(
   filePath: string,
   fileBuffer: Buffer,
-): Promise<{ success: boolean; path: string; error?: string; revision?: string }> {
+  options?: { isPrivate?: boolean },
+): Promise<{
+  success: boolean
+  path: string
+  error?: string
+  revision?: string
+  isPrivate?: boolean
+}> {
+  const path = await getPath()
+  const fs = await getFs()
+  let storagePath: string
   try {
-    const path = await getPath()
-    const fs = await getFs()
-    const storagePath = getStoragePath()
-
-    // Decode and normalize the file path
-    const decodedPath = decodeURIComponent(filePath)
-    const normalizedPath = path
-      .normalize(decodedPath)
-      .replace(/^(\.\.(\/|\\|$))+/, '')
-    const fullPath = path.resolve(storagePath, normalizedPath)
-    const resolvedStoragePath = path.resolve(storagePath)
-
-    // Security check: ensure the resolved path is within the storage directory
-    if (!fullPath.startsWith(resolvedStoragePath)) {
-      return { success: false, path: filePath, error: 'Invalid file path' }
+    storagePath = getStoragePath()
+  } catch (error) {
+    return {
+      success: false,
+      path: filePath,
+      error: error instanceof Error ? error.message : 'Unknown error',
     }
+  }
 
+  const { hasTraversalSegment } = await import('#/server/file-access')
+  if (hasTraversalSegment(filePath)) {
+    return { success: false, path: filePath, error: 'Invalid file path' }
+  }
+
+  // Decode and normalize the file path
+  const decodedPath = decodeURIComponent(filePath)
+  const normalizedPath = path
+    .normalize(decodedPath)
+    .replace(/^(\.\.(\/|\\|$))+/, '')
+  const fullPath = path.resolve(storagePath, normalizedPath)
+  const resolvedStoragePath = path.resolve(storagePath)
+
+  // Security check: ensure the resolved path is within the storage directory
+  if (
+    fullPath !== resolvedStoragePath &&
+    !fullPath.startsWith(resolvedStoragePath + path.sep)
+  ) {
+    return { success: false, path: filePath, error: 'Invalid file path' }
+  }
+
+  const { isPrivateFile, setFilePrivate } = await import(
+    '#/server/file-metadata'
+  )
+  const priorPrivate = await isPrivateFile(storagePath, normalizedPath)
+  const wantPrivate = options?.isPrivate === true
+
+  try {
     // Ensure the directory exists
     const fileDir = path.dirname(fullPath)
     if (!fs.existsSync(fileDir)) {
       fs.mkdirSync(fileDir, { recursive: true })
     }
 
-    // Write the file
+    // Commit bytes first; only then update privacy so a failed write cannot
+    // leave an existing file marked private incorrectly.
     fs.writeFileSync(fullPath, fileBuffer)
+
+    try {
+      await setFilePrivate(storagePath, normalizedPath, wantPrivate)
+    } catch (privacyError) {
+      try {
+        await setFilePrivate(storagePath, normalizedPath, priorPrivate)
+      } catch {
+        // Best-effort restore
+      }
+      throw privacyError
+    }
 
     // Drop stale transforms if this path is being overwritten
     await clearCacheForFile(normalizedPath)
 
     const revision = String(fs.statSync(fullPath).mtimeMs)
-    return { success: true, path: normalizedPath, revision }
+
+    return {
+      success: true,
+      path: normalizedPath,
+      revision,
+      isPrivate: wantPrivate,
+    }
   } catch (error) {
     console.error('Error uploading file:', error)
     return {
@@ -833,7 +949,12 @@ export async function uploadFile(
 
 export async function deleteFile(
   filePath: string,
-): Promise<{ success: boolean; path: string; error?: string; deletedCache?: boolean }> {
+): Promise<{
+  success: boolean
+  path: string
+  error?: string
+  deletedCache?: boolean
+}> {
   try {
     const path = await getPath()
     const fs = await getFs()
@@ -858,6 +979,9 @@ export async function deleteFile(
 
     fs.unlinkSync(fullPath)
 
+    const { deleteFileMetadata } = await import('#/server/file-metadata')
+    await deleteFileMetadata(storagePath, normalizedPath)
+
     // Best-effort: remove cache directory for this file, if present
     const deletedCache = await clearCacheForFile(normalizedPath)
 
@@ -870,4 +994,89 @@ export async function deleteFile(
       error: error instanceof Error ? error.message : 'Unknown error',
     }
   }
+}
+
+export type SetFilesPrivacyResult = {
+  updated: string[]
+  unchanged: string[]
+  missing: string[]
+  invalid: string[]
+}
+
+/**
+ * Mark existing stored files private or public. Missing paths are reported,
+ * not created. Idempotent for already-matching privacy state.
+ */
+export async function setFilesPrivacy(
+  filePaths: string[],
+  isPrivate: boolean,
+): Promise<SetFilesPrivacyResult> {
+  const path = await getPath()
+  const fs = await getFs()
+  const storagePath = getStoragePath()
+  const {
+    isPrivateFile,
+    setFilePrivate,
+  } = await import('#/server/file-metadata')
+
+  const updated: string[] = []
+  const unchanged: string[] = []
+  const missing: string[] = []
+  const invalid: string[] = []
+
+  const { hasTraversalSegment, isDeniedInternalStoragePath } = await import(
+    '#/server/file-access'
+  )
+
+  for (const filePath of filePaths) {
+    let normalizedPath: string
+    try {
+      if (typeof filePath !== 'string' || filePath.trim() === '') {
+        invalid.push(filePath)
+        continue
+      }
+      if (hasTraversalSegment(filePath)) {
+        invalid.push(filePath)
+        continue
+      }
+      normalizedPath = normalizeRelativeStoragePath(filePath, path)
+      if (!normalizedPath || normalizedPath === '.' || normalizedPath === '..') {
+        invalid.push(filePath)
+        continue
+      }
+      if (isDeniedInternalStoragePath(normalizedPath)) {
+        invalid.push(filePath)
+        continue
+      }
+      const fullPath = path.resolve(storagePath, normalizedPath)
+      const resolvedStoragePath = path.resolve(storagePath)
+      if (
+        fullPath !== resolvedStoragePath &&
+        !fullPath.startsWith(resolvedStoragePath + path.sep)
+      ) {
+        invalid.push(filePath)
+        continue
+      }
+    } catch {
+      invalid.push(filePath)
+      continue
+    }
+
+    const fullPath = path.resolve(storagePath, normalizedPath)
+    if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+      missing.push(normalizedPath)
+      continue
+    }
+
+    const currentlyPrivate = await isPrivateFile(storagePath, normalizedPath)
+    if (currentlyPrivate === isPrivate) {
+      unchanged.push(normalizedPath)
+      continue
+    }
+
+    await setFilePrivate(storagePath, normalizedPath, isPrivate)
+    updated.push(normalizedPath)
+  }
+
+  return { updated, unchanged, missing, invalid }
 }

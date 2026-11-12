@@ -13,6 +13,13 @@ settings are:
 - `FILE_STORAGE_PATH` (required): Absolute path where Cabby stores files.
 - `FILE_CACHE_PATH` (optional): Absolute path to the cache directory for
   transformed images. Defaults to `${FILE_STORAGE_PATH}/.cache` if not set.
+- `WRITE_AUTH_TOKEN` (required for upload/delete/sign/privacy): Bearer token
+  for write operations.
+- `SIGNED_URL_SECRET` (recommended when using private files): HMAC secret for
+  signed URLs. Fallback order: `SIGNED_URL_SECRET` → `WRITE_AUTH_TOKEN` →
+  `UPLOAD_AUTH_SECRET`.
+- `SIGNED_URL_DEFAULT_TTL` (optional): Default signed URL lifetime in seconds
+  (default `3600`).
 - `PORT` (optional): Port the HTTP server listens on. Defaults to `3000`.
 - `HOST` (optional): Host interface to bind to. Defaults to `0.0.0.0`.
 

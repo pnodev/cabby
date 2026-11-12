@@ -22,6 +22,8 @@ export type ServeFileRequestOptions = {
   sourceRevisionInUrl?: string
   /** When true, image transforms are applied (caller already validated isImage). */
   wantsTransform: boolean
+  /** Override Cache-Control (e.g. private signed-URL responses). */
+  cacheControl?: string
 }
 
 /** Shared 200/206 response headers for file bodies (CORS + Accept-Ranges). */
@@ -62,7 +64,8 @@ export async function serveFileResponse(
     wantsTransform,
   } = options
 
-  const cacheControl = buildFileCacheControl(sourceRevisionInUrl)
+  const cacheControl =
+    options.cacheControl ?? buildFileCacheControl(sourceRevisionInUrl)
   const ifNoneMatch = request.headers.get('If-None-Match')
 
   // Cheap 304 path: only skip the body when the revision is stable.
