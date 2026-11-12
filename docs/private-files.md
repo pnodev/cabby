@@ -44,7 +44,7 @@ sequenceDiagram
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `WRITE_AUTH_TOKEN` | Yes (for upload/delete/sign) | Bearer token for write operations |
-| `SIGNED_URL_SECRET` | Recommended | HMAC secret for URL signing. Falls back to `WRITE_AUTH_TOKEN` if unset |
+| `SIGNED_URL_SECRET` | Recommended | HMAC secret for URL signing. Fallback order: `SIGNED_URL_SECRET` → `WRITE_AUTH_TOKEN` → `UPLOAD_AUTH_SECRET` |
 | `SIGNED_URL_DEFAULT_TTL` | No | Default signed URL lifetime in seconds. Default: `3600` (1 hour) |
 
 ## API reference
@@ -202,7 +202,26 @@ to clear the private flag (restore public GET).
 1. Query your app DB for Cabby storage paths that should be private.
 2. Chunk into batches of ≤500.
 3. `POST /privacy` with `private: true` for each chunk.
-4. After that, clients must use `POST /sign` for access — plain URLs return `403`.
+4. After that, requests that **reach Cabby** without a valid signature return `403`.
+   Clients must use `POST /sign` for access.
+5. **Purge edge/browser caches for each migrated path.** Cabby cannot purge
+   browser caches, shared proxy caches, or CDNs. Formerly public responses may
+   remain readable from those caches for up to **31536000 seconds** (one year)
+   when they were served with `Cache-Control: public, max-age=31536000, immutable`
+   (typical for `?v=` URLs). The new `403` applies only after the request hits
+   Cabby.
+
+**Cache purge by deployment target** (use the mechanism you already operate):
+
+| Layer | Default Cabby deploy docs | What to do after `POST /privacy` |
+|-------|---------------------------|----------------------------------|
+| Cabby origin | Always | Enforces private reads immediately for uncached requests |
+| Browser | N/A | Hard refresh or wait out `max-age`; Cabby cannot clear client caches |
+| Nginx (see [deployment.md](./deployment.md)) | Example config has **no** `proxy_cache` | If you added `proxy_cache`, purge those cache keys/files with your existing nginx cache tooling (e.g. `proxy_cache_purge` when configured, or delete the on-disk cache zone entries for the migrated URLs). If you did not enable proxy caching, skip |
+| Cloudflare / other CDN | Not configured by Cabby | Purge each migrated URL (or a prefix) via that provider’s dashboard or Cache Purge API |
+| Traefik / Caddy | TLS reverse proxy only in docs | Same as nginx: only if you configured a caching middleware/plugin |
+
+Do not assume a purge API exists on Cabby itself — there is none.
 
 ```bash
 curl -X POST "$CABBY_URL/privacy" \

@@ -36,14 +36,14 @@ describe('setFilesPrivacy', () => {
     await uploadFile('docs/b.pdf', Buffer.from('b'))
 
     const first = await setFilesPrivacy(
-      ['docs/a.pdf', 'docs/missing.pdf', '', 'docs/b.pdf'],
+      ['docs/a.pdf', 'docs/missing.pdf', '', '../docs/a.pdf', 'docs/b.pdf'],
       true,
     )
 
     expect(first.updated.sort()).toEqual(['docs/a.pdf', 'docs/b.pdf'])
     expect(first.unchanged).toEqual([])
     expect(first.missing).toEqual(['docs/missing.pdf'])
-    expect(first.invalid).toEqual([''])
+    expect(first.invalid).toEqual(['', '../docs/a.pdf'])
     expect(await isPrivateFile(storageDir, 'docs/a.pdf')).toBe(true)
     expect(await isPrivateFile(storageDir, 'docs/b.pdf')).toBe(true)
 

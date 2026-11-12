@@ -414,6 +414,10 @@ const GetFileInputSchema = z.object({
   filePath: z.string(),
   sizeParam: z.string().optional(),
   formatParam: z.string().optional(),
+  /** Signed expiry (`se`) required when the file is private. */
+  se: z.string().optional(),
+  /** Signature (`sig`) required when the file is private. */
+  sig: z.string().optional(),
 })
 
 const READ_STORED_FILE_MAX_ATTEMPTS = 3
@@ -449,6 +453,10 @@ export async function readStoredFile(options: {
   const normalizedPath = path
     .normalize(decodedPath)
     .replace(/^(\.\.(\/|\\|$))+/, '')
+  const { isDeniedInternalStoragePath } = await import('#/server/file-access')
+  if (isDeniedInternalStoragePath(normalizedPath)) {
+    throw new Error('File not found')
+  }
   const fullPath = path.resolve(storagePath, normalizedPath)
   const resolvedStoragePath = path.resolve(storagePath)
 
@@ -519,6 +527,28 @@ export async function readStoredFile(options: {
 export const getFile = createServerFn()
   .inputValidator(GetFileInputSchema)
   .handler(async (ctx) => {
+    const path = await getPath()
+    const storagePath = getStoragePath()
+    const normalizedPath = normalizeRelativeStoragePath(ctx.data.filePath, path)
+    const searchParams = new URLSearchParams()
+    if (ctx.data.sizeParam) searchParams.set('size', ctx.data.sizeParam)
+    if (ctx.data.formatParam) searchParams.set('format', ctx.data.formatParam)
+    if (ctx.data.se) searchParams.set('se', ctx.data.se)
+    if (ctx.data.sig) searchParams.set('sig', ctx.data.sig)
+
+    const { evaluateFileReadAccess } = await import('#/server/file-access')
+    const access = await evaluateFileReadAccess({
+      storagePath,
+      normalizedPath,
+      searchParams,
+    })
+    if (!access.allowed) {
+      throw new Response(access.message, {
+        status: access.status,
+        headers: { 'Content-Type': 'text/plain' },
+      })
+    }
+
     return readStoredFile(ctx.data)
   })
 
@@ -741,6 +771,7 @@ export const getFileDetailView = createServerFn()
       path: string
       isImage: boolean
       isPrivate: boolean
+      needsWriteToken: boolean
       fileUrl: string
       versions: Array<{
         fileName: string
@@ -757,8 +788,19 @@ export const getFileDetailView = createServerFn()
 
       if (isPrivate) {
         const { getRequest } = await import('@tanstack/react-start/server')
-        const { assertWriteToken } = await import('#/server/request-auth')
-        assertWriteToken(getRequest())
+        const { requireWriteToken } = await import('#/server/request-auth')
+        const unauthorized = requireWriteToken(getRequest())
+        if (unauthorized) {
+          // Preserve write-token requirement; UI collects the token and signs via POST /sign.
+          return {
+            path: filePath,
+            isImage,
+            isPrivate: true,
+            needsWriteToken: true,
+            fileUrl: '',
+            versions: [],
+          }
+        }
       }
 
       const rawVersions = isImage
@@ -799,7 +841,14 @@ export const getFileDetailView = createServerFn()
         })
       }
 
-      return { path: filePath, isImage, isPrivate, fileUrl, versions }
+      return {
+        path: filePath,
+        isImage,
+        isPrivate,
+        needsWriteToken: false,
+        fileUrl,
+        versions,
+      }
     },
   )
 
@@ -815,52 +864,78 @@ export async function uploadFile(
   revision?: string
   isPrivate?: boolean
 }> {
+  const path = await getPath()
+  const fs = await getFs()
+  let storagePath: string
   try {
-    const path = await getPath()
-    const fs = await getFs()
-    const storagePath = getStoragePath()
-
-    // Decode and normalize the file path
-    const decodedPath = decodeURIComponent(filePath)
-    const normalizedPath = path
-      .normalize(decodedPath)
-      .replace(/^(\.\.(\/|\\|$))+/, '')
-    const fullPath = path.resolve(storagePath, normalizedPath)
-    const resolvedStoragePath = path.resolve(storagePath)
-
-    // Security check: ensure the resolved path is within the storage directory
-    if (!fullPath.startsWith(resolvedStoragePath)) {
-      return { success: false, path: filePath, error: 'Invalid file path' }
+    storagePath = getStoragePath()
+  } catch (error) {
+    return {
+      success: false,
+      path: filePath,
+      error: error instanceof Error ? error.message : 'Unknown error',
     }
+  }
 
+  const { hasTraversalSegment } = await import('#/server/file-access')
+  if (hasTraversalSegment(filePath)) {
+    return { success: false, path: filePath, error: 'Invalid file path' }
+  }
+
+  // Decode and normalize the file path
+  const decodedPath = decodeURIComponent(filePath)
+  const normalizedPath = path
+    .normalize(decodedPath)
+    .replace(/^(\.\.(\/|\\|$))+/, '')
+  const fullPath = path.resolve(storagePath, normalizedPath)
+  const resolvedStoragePath = path.resolve(storagePath)
+
+  // Security check: ensure the resolved path is within the storage directory
+  if (
+    fullPath !== resolvedStoragePath &&
+    !fullPath.startsWith(resolvedStoragePath + path.sep)
+  ) {
+    return { success: false, path: filePath, error: 'Invalid file path' }
+  }
+
+  const { isPrivateFile, setFilePrivate } = await import(
+    '#/server/file-metadata'
+  )
+  const priorPrivate = await isPrivateFile(storagePath, normalizedPath)
+  const wantPrivate = options?.isPrivate === true
+
+  try {
     // Ensure the directory exists
     const fileDir = path.dirname(fullPath)
     if (!fs.existsSync(fileDir)) {
       fs.mkdirSync(fileDir, { recursive: true })
     }
 
-    const { setFilePrivate } = await import('#/server/file-metadata')
-    if (options?.isPrivate === true) {
-      await setFilePrivate(storagePath, normalizedPath, true)
-    }
-
-    // Write the file
+    // Commit bytes first; only then update privacy so a failed write cannot
+    // leave an existing file marked private incorrectly.
     fs.writeFileSync(fullPath, fileBuffer)
+
+    try {
+      await setFilePrivate(storagePath, normalizedPath, wantPrivate)
+    } catch (privacyError) {
+      try {
+        await setFilePrivate(storagePath, normalizedPath, priorPrivate)
+      } catch {
+        // Best-effort restore
+      }
+      throw privacyError
+    }
 
     // Drop stale transforms if this path is being overwritten
     await clearCacheForFile(normalizedPath)
 
     const revision = String(fs.statSync(fullPath).mtimeMs)
 
-    if (options?.isPrivate !== true) {
-      await setFilePrivate(storagePath, normalizedPath, false)
-    }
-
     return {
       success: true,
       path: normalizedPath,
       revision,
-      isPrivate: options?.isPrivate === true,
+      isPrivate: wantPrivate,
     }
   } catch (error) {
     console.error('Error uploading file:', error)
@@ -949,6 +1024,10 @@ export async function setFilesPrivacy(
   const missing: string[] = []
   const invalid: string[] = []
 
+  const { hasTraversalSegment, isDeniedInternalStoragePath } = await import(
+    '#/server/file-access'
+  )
+
   for (const filePath of filePaths) {
     let normalizedPath: string
     try {
@@ -956,8 +1035,16 @@ export async function setFilesPrivacy(
         invalid.push(filePath)
         continue
       }
+      if (hasTraversalSegment(filePath)) {
+        invalid.push(filePath)
+        continue
+      }
       normalizedPath = normalizeRelativeStoragePath(filePath, path)
       if (!normalizedPath || normalizedPath === '.' || normalizedPath === '..') {
+        invalid.push(filePath)
+        continue
+      }
+      if (isDeniedInternalStoragePath(normalizedPath)) {
         invalid.push(filePath)
         continue
       }

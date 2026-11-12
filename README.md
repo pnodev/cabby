@@ -31,7 +31,7 @@ Before running the application, you need to set the following environment variab
 
 - **`WRITE_AUTH_TOKEN`** - Token required for write operations (upload and delete). Clients must send it via the `Authorization` header (`Bearer <token>` or just `<token>`).
 
-- **`SIGNED_URL_SECRET`** - Secret used to sign URLs for private files (HMAC-SHA256). Falls back to `WRITE_AUTH_TOKEN` when unset. Required when private files are used.
+- **`SIGNED_URL_SECRET`** - Secret used to sign URLs for private files (HMAC-SHA256). Fallback order: `SIGNED_URL_SECRET` → `WRITE_AUTH_TOKEN` → `UPLOAD_AUTH_SECRET` (legacy upload secret remains an active signing fallback). Required when private files are used.
 
 - **`SIGNED_URL_DEFAULT_TTL`** - Default signed URL lifetime in seconds. Defaults to `3600` (1 hour).
 

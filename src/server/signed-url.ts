@@ -55,7 +55,7 @@ export function createSignedUrlParams(options: {
   const secret = options.secret ?? getSignedUrlSecret()
   if (!secret) {
     throw new Error(
-      'SIGNED_URL_SECRET (or WRITE_AUTH_TOKEN) is not configured',
+      'SIGNED_URL_SECRET (or WRITE_AUTH_TOKEN / UPLOAD_AUTH_SECRET) is not configured',
     )
   }
 

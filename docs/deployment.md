@@ -16,7 +16,8 @@ settings are:
 - `WRITE_AUTH_TOKEN` (required for upload/delete/sign/privacy): Bearer token
   for write operations.
 - `SIGNED_URL_SECRET` (recommended when using private files): HMAC secret for
-  signed URLs. Falls back to `WRITE_AUTH_TOKEN` when unset.
+  signed URLs. Fallback order: `SIGNED_URL_SECRET` → `WRITE_AUTH_TOKEN` →
+  `UPLOAD_AUTH_SECRET`.
 - `SIGNED_URL_DEFAULT_TTL` (optional): Default signed URL lifetime in seconds
   (default `3600`).
 - `PORT` (optional): Port the HTTP server listens on. Defaults to `3000`.

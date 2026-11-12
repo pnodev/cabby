@@ -9,12 +9,13 @@ async function getPath() {
 /** Directory under storage root for Cabby metadata (private flags, etc.). */
 export const CABBY_META_DIR = '.cabby'
 
+/**
+ * Normalize a storage-relative path for metadata keys.
+ * Does not URI-decode — callers must pass already-decoded storage paths
+ * (same convention as writers after `normalizeRelativeStoragePath`).
+ */
 function normalizeStorageRelativePath(filePath: string): string {
-  // Lazy sync import avoided — caller paths are already normalized in most cases.
-  // We re-normalize via the shared helper once path module is available synchronously
-  // in callers; here we use a minimal inline normalize for metadata keys.
-  const decoded = decodeURIComponent(filePath)
-  return decoded
+  return filePath
     .replace(/\\/g, '/')
     .replace(/^(\.\.(\/|$))+/, '')
     .replace(/^\/+/, '')
@@ -119,12 +120,18 @@ export async function deleteFileMetadata(
   filePath: string,
 ): Promise<void> {
   const fs = await getFs()
+  const metaPath = await getMetadataFilePath(storagePath, filePath)
   try {
-    const metaPath = await getMetadataFilePath(storagePath, filePath)
-    if (fs.existsSync(metaPath)) {
-      fs.unlinkSync(metaPath)
+    fs.unlinkSync(metaPath)
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
+      return
     }
-  } catch {
-    // Best-effort
+    throw error
   }
 }

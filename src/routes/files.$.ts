@@ -23,6 +23,7 @@ export const Route = createFileRoute('/files/$')({
           const { serveFileResponse } = await import(
             '#/server/serve-file-response'
           )
+          const { evaluateFileReadAccess } = await import('#/server/file-access')
           const pathMod = await import('node:path')
 
           // Parse the URL to get the file path
@@ -58,32 +59,16 @@ export const Route = createFileRoute('/files/$')({
           }
 
           const normalizedPath = normalizeRelativeStoragePath(path, pathMod)
-
-          const { isPrivateFile } = await import('#/server/file-metadata')
-          const fileIsPrivate = await isPrivateFile(storagePath, normalizedPath)
-
-          let cacheControl: string | undefined
-          if (fileIsPrivate) {
-            const signedUrl = await import('#/server/signed-url')
-            const verification = signedUrl.verifySignedUrlAccess({
-              filePath: normalizedPath,
-              searchParams: url.searchParams,
+          const access = await evaluateFileReadAccess({
+            storagePath,
+            normalizedPath,
+            searchParams: url.searchParams,
+          })
+          if (!access.allowed) {
+            return new Response(access.message, {
+              status: access.status,
+              headers: { 'Content-Type': 'text/plain' },
             })
-            if (!verification.valid) {
-              const status =
-                verification.reason === 'missing_secret' ? 500 : 403
-              const message =
-                verification.reason === 'missing_secret'
-                  ? 'SIGNED_URL_SECRET (or WRITE_AUTH_TOKEN) is not configured'
-                  : verification.reason === 'expired'
-                    ? 'Signed URL has expired'
-                    : 'Forbidden'
-              return new Response(message, {
-                status,
-                headers: { 'Content-Type': 'text/plain' },
-              })
-            }
-            cacheControl = signedUrl.buildPrivateFileCacheControl()
           }
 
           const isImage = await isImageFile({ data: { filePath: path } })
@@ -106,7 +91,7 @@ export const Route = createFileRoute('/files/$')({
             formatParam,
             sourceRevisionInUrl,
             wantsTransform: Boolean(isImage && (sizeParam || formatParam)),
-            cacheControl,
+            cacheControl: access.cacheControl,
           })
         } catch (error) {
           console.error('Error serving file:', error)
